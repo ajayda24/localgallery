@@ -78,6 +78,58 @@ pub fn escape(v: &mut Value) {
     }
 }
 
+/// Every value path a template refers to (placeholder roots and filter arguments that
+/// name other values), for checking manifests. `item`/`index`/`prev` are left out.
+pub fn references(v: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_refs(v, &mut out);
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn collect_refs(v: &Value, out: &mut Vec<String>) {
+    match v {
+        Value::String(s) => {
+            let mut rest = s.as_str();
+            while let Some(start) = rest.find("{{") {
+                let after = &rest[start + 2..];
+                let Some(end) = after.find("}}") else { break };
+                let expr = after[..end].trim();
+                let mut parts = expr.split('|');
+                let root = parts.next().unwrap_or("").trim();
+                let first = root.split('.').next().unwrap_or("");
+                match first {
+                    "item" | "index" | "lbrace" | "rbrace" => {}
+                    _ if first.starts_with("prev:") => {}
+                    "file" => out.push(root.splitn(3, '.').take(2).collect::<Vec<_>>().join(".")),
+                    _ => out.push(first.to_string()),
+                }
+                for f in parts {
+                    if let Some((name, arg)) = f.split_once(':')
+                        && matches!(name.trim(), "scale" | "bbox_state")
+                    {
+                        let a = arg.trim();
+                        let is_literal = a.split_once('x').is_some_and(|(w, h)| {
+                            w.parse::<f64>().is_ok() && h.parse::<f64>().is_ok()
+                        });
+                        if !is_literal {
+                            let r = a.split('.').next().unwrap_or("");
+                            if r != "item" && r != "index" {
+                                out.push(r.to_string());
+                            }
+                        }
+                    }
+                }
+                rest = &after[end + 2..];
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|x| collect_refs(x, out)),
+        Value::Object(o) => o.values().for_each(|x| collect_refs(x, out)),
+        _ => {}
+    }
+}
+
 fn whole_placeholder(s: &str) -> Option<&str> {
     let t = s.strip_prefix("{{")?.strip_suffix("}}")?;
     (!t.contains("{{") && !t.contains("}}")).then_some(t.trim())
@@ -397,6 +449,12 @@ mod tests {
         escape(&mut t);
         substitute(&mut t, &Scope::default()).unwrap();
         assert_eq!(t, original);
+    }
+
+    #[test]
+    fn lists_references() {
+        let t = json!({"a": "{{prompt}} {{size.w|scale:size.h}}", "b": "{{item.x}}", "c": "{{file.vae}}", "d": "{{r|bbox_state:1024x1024}}", "e": "{{prev:0}}"});
+        assert_eq!(references(&t), ["file.vae", "prompt", "r", "size"]);
     }
 
     #[test]

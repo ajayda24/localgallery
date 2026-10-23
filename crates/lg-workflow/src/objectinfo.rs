@@ -20,6 +20,12 @@ pub struct InputDef {
     pub tooltip: Option<String>,
     /// Seed-like INT inputs carry an extra "control_after_generate" widget value in UI workflows.
     pub control_after_generate: bool,
+    /// The input carries a default or a widget flag, so it has a widget in the editor.
+    #[serde(skip)]
+    pub widget_hint: bool,
+    /// Growable inputs: the item names that must be present (`<name>.<item>`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub required_items: Vec<String>,
     /// Dynamic combos: option key -> the extra inputs that option adds (as `<name>.<sub>`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sub: Vec<(Value, Vec<InputDef>)>,
@@ -27,10 +33,11 @@ pub struct InputDef {
 
 impl InputDef {
     pub fn is_widget(&self) -> bool {
+        // Newer widget types (COLORS, BOUNDING_BOXES, ...) are recognised by their default.
         matches!(
             self.ty.as_str(),
             "INT" | "FLOAT" | "STRING" | "BOOLEAN" | "COMBO"
-        )
+        ) || self.widget_hint
     }
 }
 
@@ -79,6 +86,7 @@ fn parse_input(name: &str, spec: &Value, required: bool) -> InputDef {
         _ => ("*".to_string(), vec![]),
     };
     // Growable input lists (`<name>.<item>` keys) are never required as a whole.
+    let section_required = required;
     let required =
         required && !matches!(ty.as_str(), "COMFY_AUTOGROW_V3" | "COMFY_DYNAMICGROUP_V3");
     let num = |k: &str| opts.get(k).and_then(Value::as_f64);
@@ -103,6 +111,36 @@ fn parse_input(name: &str, spec: &Value, required: bool) -> InputDef {
             .get("control_after_generate")
             .and_then(Value::as_bool)
             .unwrap_or(false),
+        widget_hint: opts.get("default").is_some() || opts.get("socketless").is_some(),
+        required_items: if first.as_str() == Some("COMFY_AUTOGROW_V3") && section_required {
+            // `min` lives in the template (ComfyUI's own default is 1).
+            let min = opts
+                .pointer("/template/min")
+                .or(opts.get("min"))
+                .and_then(Value::as_u64)
+                .unwrap_or(1) as usize;
+            let names: Vec<String> = match opts.pointer("/template/names").and_then(Value::as_array)
+            {
+                Some(n) => n
+                    .iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect(),
+                None => {
+                    let prefix = opts
+                        .pointer("/template/prefix")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    (0..min).map(|i| format!("{prefix}{i}")).collect()
+                }
+            };
+            names
+                .into_iter()
+                .take(min)
+                .map(|n| format!("{name}.{n}"))
+                .collect()
+        } else {
+            vec![]
+        },
         sub: if first.as_str() == Some("COMFY_DYNAMICCOMBO_V3") {
             opts.get("options")
                 .and_then(Value::as_array)
@@ -206,12 +244,24 @@ pub fn validate(graph: &Value, object_info: &Value) -> Vec<Issue> {
         for def in &defs {
             let v = given.and_then(|g| g.get(&def.name));
             match v {
-                None if def.required && def.default.is_none() => issues.push(Issue::MissingInput {
+                None if def.required => issues.push(Issue::MissingInput {
                     node: id.clone(),
                     class_type: class.clone(),
                     input: def.name.clone(),
                 }),
+                None if !def.required_items.is_empty() => {
+                    for item in &def.required_items {
+                        if given.and_then(|g| g.get(item)).is_none() {
+                            issues.push(Issue::MissingInput {
+                                node: id.clone(),
+                                class_type: class.clone(),
+                                input: item.clone(),
+                            });
+                        }
+                    }
+                }
                 Some(v) => {
+                    let v = v.get("__value__").unwrap_or(v);
                     // API-format links always carry the node id as a string.
                     if let Some((target, _)) = as_link(v).filter(|_| v[0].is_string()) {
                         if !nodes.contains_key(&target) {
@@ -281,7 +331,7 @@ mod tests {
     fn finds_issues() {
         let g = json!({
             "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "missing.safetensors"}},
-            "2": {"class_type": "KSampler", "inputs": {"model": ["9", 0], "sampler_name": "euler"}},
+            "2": {"class_type": "KSampler", "inputs": {"model": ["9", 0], "seed": 1, "sampler_name": "euler"}},
             "3": {"class_type": "SomeCustomNode", "inputs": {}}
         });
         let issues = validate(&g, &info());
@@ -300,11 +350,7 @@ mod tests {
                 .iter()
                 .any(|i| matches!(i, Issue::UnknownNode { .. }))
         );
-        assert_eq!(
-            issues.len(),
-            3,
-            "seed has a default so it is not missing: {issues:?}"
-        );
+        assert_eq!(issues.len(), 3, "{issues:?}");
     }
 
     #[test]

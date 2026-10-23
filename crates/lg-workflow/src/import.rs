@@ -102,6 +102,29 @@ pub fn to_api(workflow: &Value, object_info: &Value) -> Result<Value, BindError>
             by_id: &by_id,
         };
         fill(&ctx, &defs, "", &mut wi, &mut inputs);
+        // Items of growable inputs (`images.image0`, `values.a`) are links the class
+        // definition does not list one by one.
+        for ui in &ui_inputs {
+            let (Some(name), Some(link)) = (
+                ui.get("name").and_then(Value::as_str),
+                ui.get("link").and_then(Value::as_i64),
+            ) else {
+                continue;
+            };
+            if name.contains('.') && !inputs.contains_key(name) {
+                let ty = ui.get("type").and_then(Value::as_str).unwrap_or("*");
+                if let Some(src) = resolve_source(link, &links, &by_id, ty) {
+                    inputs.insert(name.to_string(), src);
+                }
+            }
+        }
+        let mut node_inputs = Map::new();
+        node_inputs.insert("n".into(), json!({"inputs": inputs}));
+        crate::wrap_list_values(&mut node_inputs);
+        let inputs = node_inputs
+            .remove("n")
+            .map(|n| n["inputs"].clone())
+            .unwrap_or_default();
         let mut n = json!({"class_type": class, "inputs": inputs});
         if let Some(title) = node.get("title").and_then(Value::as_str) {
             n["_meta"] = json!({"title": title});
@@ -156,7 +179,12 @@ fn fill(
                 (None, Some(v)) => {
                     inputs.insert(name.clone(), v);
                 }
-                _ => {}
+                // Saved before this widget existed: the editor would show its default.
+                (None, None) => {
+                    if let Some(d) = def.default.clone().or_else(|| def.options.first().cloned()) {
+                        inputs.insert(name.clone(), d);
+                    }
+                }
             }
             if !def.sub.is_empty()
                 && let Some(key) = inputs.get(&name).cloned()
@@ -280,7 +308,12 @@ pub fn prune_unfed(graph: &mut Value, object_info: &Value) {
                 inputs_of(object_info, class)
                     .unwrap_or_default()
                     .iter()
-                    .any(|d| d.required && !d.is_widget() && n["inputs"].get(&d.name).is_none())
+                    .any(|d| {
+                        (d.required && !d.is_widget() && n["inputs"].get(&d.name).is_none())
+                            || d.required_items
+                                .iter()
+                                .any(|i| n["inputs"].get(i).is_none())
+                    })
             })
             .map(|(k, _)| k.clone())
             .collect();

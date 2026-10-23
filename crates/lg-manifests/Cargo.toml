@@ -1,7 +1,19 @@
 [package]
 name = "lg-manifests"
+description = "Loads, checks and hot-reloads capability manifests; turns blueprints into tools."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+lg-types.workspace = true
+lg-workflow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+notify.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+jsonschema.workspace = true
+tempfile.workspace = true

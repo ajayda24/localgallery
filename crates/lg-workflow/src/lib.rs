@@ -95,12 +95,30 @@ pub fn build_graph(
         set_output_prefix(map, prefix);
     }
     apply_overrides(map, &spec.overrides)?;
+    wrap_list_values(map);
     Ok(graph)
 }
 
 /// Templates may carry editor-only keys (e.g. `"_comment"`); the engine must not see them.
 fn strip_ui_keys(map: &mut Map<String, Value>) {
     map.retain(|k, _| !k.starts_with('_'));
+}
+
+/// In API graphs a list means a link, so list-valued widgets (bounding boxes, arrays)
+/// travel as `{"__value__": [...]}`, which ComfyUI unwraps before validation.
+pub fn wrap_list_values(map: &mut Map<String, Value>) {
+    for node in map.values_mut() {
+        if let Some(inputs) = node.get_mut("inputs").and_then(Value::as_object_mut) {
+            for v in inputs.values_mut() {
+                let is_link = v
+                    .as_array()
+                    .is_some_and(|a| a.len() == 2 && a[0].is_string() && a[1].is_u64());
+                if v.is_array() && !is_link {
+                    *v = json!({"__value__": v.take()});
+                }
+            }
+        }
+    }
 }
 
 /// Swap VAEDecode for VAEDecodeTiled to cap decode memory.
