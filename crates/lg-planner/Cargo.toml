@@ -1,7 +1,12 @@
 [package]
 name = "lg-planner"
+description = "Memory planner: picks weight variants, offload level, ComfyUI flags and explains why."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+lg-types.workspace = true
+lg-store.workspace = true
+serde.workspace = true
+serde_json.workspace = true

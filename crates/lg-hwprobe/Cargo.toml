@@ -1,7 +1,16 @@
 [package]
 name = "lg-hwprobe"
+description = "Hardware probe and resource monitor (GPU via nvidia-smi, RAM/CPU/disk via sysinfo, Windows counters)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+lg-types.workspace = true
+sysinfo.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_System_Power"] }

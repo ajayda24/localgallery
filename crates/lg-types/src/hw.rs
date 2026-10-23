@@ -102,7 +102,17 @@ pub struct Plan {
     /// ComfyUI launch flags. A change here restarts the engine.
     pub launch_flags: Vec<String>,
     pub vae_tiled: bool,
+    /// Input values the planner recommends (e.g. `weight_dtype: fp8_e4m3fn`); only applied
+    /// where the user left the default.
+    #[serde(default)]
+    pub value_overrides: std::collections::BTreeMap<String, serde_json::Value>,
     pub vram_budget_gb: f64,
+    /// Total weights that must be held in RAM or VRAM.
+    #[serde(default)]
+    pub weights_gb: f64,
+    /// Files that still have to be downloaded, with sizes.
+    #[serde(default)]
+    pub downloads: Vec<(String, f64)>,
     pub estimated_vram_gb: f64,
     pub estimated_seconds: Option<f64>,
     /// Plain-language reasons, shown to the user.

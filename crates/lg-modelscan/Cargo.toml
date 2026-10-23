@@ -1,7 +1,15 @@
 [package]
 name = "lg-modelscan"
+description = "Identifies model files from safetensors/GGUF headers without loading weights."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+lg-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
