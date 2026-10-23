@@ -1,0 +1,360 @@
+{
+  "schema": 1,
+  "id": "wan22-14b",
+  "display_name": "Wan 2.2 14B video",
+  "family": "wan22",
+  "media": "video",
+  "description": "Text to video and image to video with two 14B experts and 4-step speed LoRAs. Needs lots of RAM; expect minutes per clip on 8 GB GPUs.",
+  "tags": [
+    "video",
+    "img2vid",
+    "txt2vid"
+  ],
+  "license": {
+    "name": "Apache-2.0",
+    "commercial": true
+  },
+  "files": [
+    {
+      "role": "text_encoder",
+      "folder": "text_encoders",
+      "ops": [],
+      "variants": [
+        {
+          "name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+          "precision": "fp8",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "vae",
+      "folder": "vae",
+      "ops": [],
+      "variants": [
+        {
+          "name": "wan_2.1_vae.safetensors",
+          "precision": "bf16",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "high_noise",
+      "folder": "diffusion_models",
+      "ops": [
+        "txt2vid"
+      ],
+      "variants": [
+        {
+          "name": "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+          "precision": "fp8",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "low_noise",
+      "folder": "diffusion_models",
+      "ops": [
+        "txt2vid"
+      ],
+      "variants": [
+        {
+          "name": "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+          "precision": "fp8",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "speed_lora_high",
+      "folder": "loras",
+      "ops": [
+        "txt2vid"
+      ],
+      "variants": [
+        {
+          "name": "wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors",
+          "precision": "bf16",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/loras/wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "speed_lora_low",
+      "folder": "loras",
+      "ops": [
+        "txt2vid"
+      ],
+      "variants": [
+        {
+          "name": "wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors",
+          "precision": "bf16",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/loras/wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "high_noise",
+      "folder": "diffusion_models",
+      "ops": [
+        "img2vid"
+      ],
+      "variants": [
+        {
+          "name": "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+          "precision": "fp8",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "low_noise",
+      "folder": "diffusion_models",
+      "ops": [
+        "img2vid"
+      ],
+      "variants": [
+        {
+          "name": "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+          "precision": "fp8",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "speed_lora_high",
+      "folder": "loras",
+      "ops": [
+        "img2vid"
+      ],
+      "variants": [
+        {
+          "name": "wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+          "precision": "bf16",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "speed_lora_low",
+      "folder": "loras",
+      "ops": [
+        "img2vid"
+      ],
+      "variants": [
+        {
+          "name": "wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+          "precision": "bf16",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors"
+        }
+      ]
+    }
+  ],
+  "memory": {
+    "activation_gb_per_mp": 0.6,
+    "activation_gb_per_mp_frame": 0.035,
+    "vae_gb_per_mp": 0.12
+  },
+  "ops": {
+    "txt2vid": {
+      "workflow": "workflows/wan22/txt2vid.json"
+    },
+    "img2vid": {
+      "workflow": "workflows/wan22/img2vid.json",
+      "requires": [
+        "first_frame"
+      ]
+    }
+  },
+  "inputs": [
+    {
+      "id": "first_frame",
+      "kind": "first_frame",
+      "label": "Start image",
+      "ops": [
+        "img2vid"
+      ]
+    },
+    {
+      "id": "prompt",
+      "kind": "text",
+      "label": "Prompt",
+      "help": "Describe the motion and the scene.",
+      "required": true
+    },
+    {
+      "id": "negative",
+      "kind": "negative_text",
+      "label": "Avoid",
+      "level": "ultra",
+      "default": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走，裸露，NSFW"
+    },
+    {
+      "id": "size",
+      "kind": "size",
+      "label": "Size",
+      "default": {
+        "w": 832,
+        "h": 480
+      },
+      "options": [
+        {
+          "value": {
+            "w": 832,
+            "h": 480
+          },
+          "label": "Wide 480p"
+        },
+        {
+          "value": {
+            "w": 480,
+            "h": 832
+          },
+          "label": "Tall 480p"
+        },
+        {
+          "value": {
+            "w": 640,
+            "h": 640
+          },
+          "label": "Square"
+        },
+        {
+          "value": {
+            "w": 1280,
+            "h": 720
+          },
+          "label": "Wide 720p (slow)"
+        }
+      ],
+      "extra": {
+        "multiple_of": 16,
+        "max_pixels": 921600
+      }
+    },
+    {
+      "id": "frames",
+      "kind": "int",
+      "label": "Length (frames)",
+      "help": "81 frames is about 5 seconds at 16 fps.",
+      "default": 81,
+      "min": 5,
+      "max": 161,
+      "step": 4,
+      "extra": {
+        "frames": true
+      }
+    },
+    {
+      "id": "fps",
+      "kind": "float",
+      "label": "Frames per second",
+      "level": "advanced",
+      "default": 16,
+      "min": 8,
+      "max": 30,
+      "step": 1
+    },
+    {
+      "id": "seed",
+      "kind": "seed",
+      "label": "Seed",
+      "level": "advanced",
+      "default": -1
+    },
+    {
+      "id": "steps",
+      "kind": "int",
+      "label": "Steps",
+      "level": "advanced",
+      "default": 4,
+      "min": 2,
+      "max": 40
+    },
+    {
+      "id": "switch_step",
+      "kind": "int",
+      "label": "Switch to low-noise expert at step",
+      "level": "ultra",
+      "default": 2,
+      "min": 1,
+      "max": 39
+    },
+    {
+      "id": "cfg",
+      "kind": "float",
+      "label": "Guidance",
+      "level": "ultra",
+      "default": 1.0,
+      "min": 1,
+      "max": 10,
+      "step": 0.5
+    },
+    {
+      "id": "shift",
+      "kind": "float",
+      "label": "Shift",
+      "level": "ultra",
+      "default": 5.0,
+      "min": 1,
+      "max": 12,
+      "step": 0.5
+    },
+    {
+      "id": "speed_lora",
+      "kind": "float",
+      "label": "Speed LoRA strength",
+      "help": "Set to 0 with 20+ steps and guidance 3.5 for the full-quality schedule.",
+      "level": "ultra",
+      "default": 1.0,
+      "min": 0,
+      "max": 1.5,
+      "step": 0.05
+    },
+    {
+      "id": "weight_dtype",
+      "kind": "enum",
+      "label": "Weight storage",
+      "level": "ultra",
+      "default": "default",
+      "options": [
+        "default",
+        "fp8_e4m3fn",
+        "fp8_e4m3fn_fast",
+        "fp8_e5m2"
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Fast (4 steps)",
+      "values": {
+        "steps": 4,
+        "switch_step": 2,
+        "cfg": 1.0,
+        "speed_lora": 1.0
+      }
+    },
+    {
+      "name": "Full quality (20 steps)",
+      "values": {
+        "steps": 20,
+        "switch_step": 10,
+        "cfg": 3.5,
+        "speed_lora": 0.0
+      }
+    }
+  ]
+}

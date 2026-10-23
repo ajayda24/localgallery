@@ -237,8 +237,17 @@ impl ComfyClient {
             .await?;
         let status = r.status();
         let body: Value = r.json().await.unwrap_or(Value::Null);
-        if status.is_success() {
+        let node_errors = body["node_errors"]
+            .as_object()
+            .is_some_and(|o| !o.is_empty());
+        if status.is_success() && !node_errors {
             return Ok(());
+        }
+        if status.is_success() {
+            // ComfyUI queues whichever outputs validated and reports the rest; a partial
+            // run would look like success, so withdraw it.
+            let _ = self.delete_queued(prompt_id).await;
+            let _ = self.interrupt(prompt_id).await;
         }
         Err(EngineError::Rejected(describe_rejection(&body)))
     }

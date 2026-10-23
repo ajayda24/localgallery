@@ -5,6 +5,8 @@
 //! own manifests (`data/user-manifests`). A later source overrides an earlier one with the
 //! same id. Every manifest is checked; problems are reported, never fatal.
 
+pub mod sample;
+
 use lg_types::{InputKind, Manifest, Origin, WorkflowRef};
 use lg_workflow::objectinfo::{Issue, validate};
 use parking_lot::RwLock;

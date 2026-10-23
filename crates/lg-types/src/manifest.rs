@@ -68,6 +68,15 @@ pub struct ModelFile {
     pub variants: Vec<FileVariant>,
     #[serde(default)]
     pub optional: bool,
+    /// Only needed for these ops. Empty = every op.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ops: Vec<String>,
+}
+
+impl ModelFile {
+    pub fn needed_for(&self, op: &str) -> bool {
+        !self.optional && (self.ops.is_empty() || self.ops.iter().any(|o| o == op))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

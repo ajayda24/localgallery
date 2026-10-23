@@ -78,8 +78,22 @@ async fn real_comfy_accepts_every_blueprint_tool() {
             .send()
             .await
             .unwrap();
-        let ok = r.status().is_success();
+        let status_ok = r.status().is_success();
         let body: Value = r.json().await.unwrap();
+        if status_ok {
+            let id = body["prompt_id"].as_str().unwrap_or_default();
+            let _ = http
+                .post(format!("{url}/queue"))
+                .json(&json!({"delete": [id]}))
+                .send()
+                .await;
+            let _ = http
+                .post(format!("{url}/interrupt"))
+                .json(&json!({"prompt_id": id}))
+                .send()
+                .await;
+        }
+        let ok = status_ok && body["node_errors"].as_object().is_none_or(|o| o.is_empty());
         if ok {
             accepted += 1;
             // Do not actually run it.

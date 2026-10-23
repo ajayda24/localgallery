@@ -27,6 +27,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
 
 [dev-dependencies]
+lg-manifests.workspace = true
 lg-workflow.workspace = true
 lg-fakecomfy.workspace = true
 tempfile.workspace = true

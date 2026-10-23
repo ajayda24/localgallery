@@ -1,0 +1,337 @@
+{
+  "schema": 1,
+  "id": "ideogram-v4",
+  "display_name": "Ideogram 4",
+  "family": "ideogram4",
+  "media": "image",
+  "description": "Text-to-image with excellent typography. Layout mode builds a structured JSON prompt from your boxes, background, style and lighting.",
+  "tags": [
+    "image",
+    "typography",
+    "json-prompt",
+    "layout",
+    "boxes"
+  ],
+  "license": {
+    "name": "See model card",
+    "commercial": false,
+    "url": "https://huggingface.co/Comfy-Org/Ideogram-4"
+  },
+  "files": [
+    {
+      "role": "diffusion",
+      "folder": "diffusion_models",
+      "variants": [
+        {
+          "name": "ideogram4_fp8_scaled.safetensors",
+          "precision": "fp8",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Ideogram-4/resolve/main/diffusion_models/ideogram4_fp8_scaled.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "diffusion_uncond",
+      "folder": "diffusion_models",
+      "variants": [
+        {
+          "name": "ideogram4_unconditional_fp8_scaled.safetensors",
+          "precision": "fp8",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Ideogram-4/resolve/main/diffusion_models/ideogram4_unconditional_fp8_scaled.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "text_encoder",
+      "folder": "text_encoders",
+      "variants": [
+        {
+          "name": "qwen3vl_8b_fp8_scaled.safetensors",
+          "precision": "fp8",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/Qwen3-VL/resolve/main/text_encoders/qwen3vl_8b_fp8_scaled.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "vae",
+      "folder": "vae",
+      "variants": [
+        {
+          "name": "flux2-vae.safetensors",
+          "precision": "fp32",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors"
+        }
+      ]
+    }
+  ],
+  "memory": {
+    "activation_gb_per_mp": 1.2,
+    "vae_gb_per_mp": 1.5
+  },
+  "ops": {
+    "txt2img": {
+      "workflow": "workflows/ideogram4/txt2img.json"
+    },
+    "layout": {
+      "workflow": "workflows/ideogram4/layout.json"
+    }
+  },
+  "inputs": [
+    {
+      "id": "prompt",
+      "kind": "text",
+      "label": "Prompt",
+      "help": "In layout mode: one or two sentences describing the whole image.",
+      "required": true
+    },
+    {
+      "id": "size",
+      "kind": "size",
+      "label": "Size",
+      "default": {
+        "w": 1024,
+        "h": 1024
+      },
+      "options": [
+        {
+          "value": {
+            "w": 1024,
+            "h": 1024
+          },
+          "label": "Square 1:1"
+        },
+        {
+          "value": {
+            "w": 832,
+            "h": 1216
+          },
+          "label": "Portrait 2:3"
+        },
+        {
+          "value": {
+            "w": 768,
+            "h": 1344
+          },
+          "label": "Tall 9:16"
+        },
+        {
+          "value": {
+            "w": 1216,
+            "h": 832
+          },
+          "label": "Landscape 3:2"
+        },
+        {
+          "value": {
+            "w": 1344,
+            "h": 768
+          },
+          "label": "Wide 16:9"
+        },
+        {
+          "value": {
+            "w": 1536,
+            "h": 1536
+          },
+          "label": "Large square"
+        }
+      ],
+      "extra": {
+        "multiple_of": 16,
+        "max_pixels": 4194304
+      }
+    },
+    {
+      "id": "regions",
+      "kind": "regions",
+      "label": "Layout boxes",
+      "help": "Draw a box per object or text. Text boxes render their text. Put the background first.",
+      "ops": [
+        "layout"
+      ],
+      "extra": {
+        "max_items": 16,
+        "text_boxes": true
+      }
+    },
+    {
+      "id": "background",
+      "kind": "text",
+      "label": "Background",
+      "ops": [
+        "layout"
+      ],
+      "default": ""
+    },
+    {
+      "id": "style",
+      "kind": "enum",
+      "label": "Style",
+      "ops": [
+        "layout"
+      ],
+      "default": "photo",
+      "options": [
+        {
+          "value": "none",
+          "label": "None"
+        },
+        {
+          "value": "photo",
+          "label": "Photo"
+        },
+        {
+          "value": "art_style",
+          "label": "Art style"
+        }
+      ]
+    },
+    {
+      "id": "style_detail",
+      "kind": "raw",
+      "label": "Camera or art style",
+      "help": "e.g. 35mm, f/1.4, bokeh - or - flat vector illustration",
+      "ops": [
+        "layout"
+      ],
+      "default": ""
+    },
+    {
+      "id": "medium",
+      "kind": "raw",
+      "label": "Medium",
+      "help": "photograph, illustration, 3d_render, painting...",
+      "ops": [
+        "layout"
+      ],
+      "level": "advanced",
+      "default": "photograph"
+    },
+    {
+      "id": "aesthetics",
+      "kind": "raw",
+      "label": "Aesthetics",
+      "ops": [
+        "layout"
+      ],
+      "level": "advanced",
+      "default": ""
+    },
+    {
+      "id": "lighting",
+      "kind": "raw",
+      "label": "Lighting",
+      "ops": [
+        "layout"
+      ],
+      "level": "advanced",
+      "default": ""
+    },
+    {
+      "id": "palette",
+      "kind": "raw",
+      "label": "Colour palette",
+      "help": "Hex colours separated by commas, e.g. #1E3A8A, #F59E0B",
+      "ops": [
+        "layout"
+      ],
+      "level": "advanced",
+      "default": "",
+      "extra": {
+        "list": true
+      }
+    },
+    {
+      "id": "seed",
+      "kind": "seed",
+      "label": "Seed",
+      "level": "advanced",
+      "default": -1
+    },
+    {
+      "id": "steps",
+      "kind": "int",
+      "label": "Steps",
+      "level": "ultra",
+      "default": 20,
+      "min": 4,
+      "max": 80
+    },
+    {
+      "id": "cfg",
+      "kind": "float",
+      "label": "Guidance",
+      "level": "ultra",
+      "default": 7.0,
+      "min": 1,
+      "max": 15,
+      "step": 0.5
+    },
+    {
+      "id": "mu",
+      "kind": "float",
+      "label": "Schedule mu",
+      "level": "ultra",
+      "default": 0.0,
+      "min": -3,
+      "max": 3,
+      "step": 0.05
+    },
+    {
+      "id": "std",
+      "kind": "float",
+      "label": "Schedule std",
+      "level": "ultra",
+      "default": 1.75,
+      "min": 0.1,
+      "max": 5,
+      "step": 0.05
+    },
+    {
+      "id": "weight_dtype",
+      "kind": "enum",
+      "label": "Weight storage",
+      "help": "fp8 halves the diffusion model's memory. 'fast' also uses fp8 math on GPUs that support it.",
+      "level": "ultra",
+      "default": "default",
+      "options": [
+        "default",
+        "fp8_e4m3fn",
+        "fp8_e4m3fn_fast",
+        "fp8_e5m2"
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Turbo",
+      "description": "12 steps",
+      "values": {
+        "steps": 12,
+        "mu": 0.5,
+        "std": 1.75
+      }
+    },
+    {
+      "name": "Default",
+      "description": "20 steps",
+      "values": {
+        "steps": 20,
+        "mu": 0.0,
+        "std": 1.75
+      }
+    },
+    {
+      "name": "Quality",
+      "description": "48 steps",
+      "values": {
+        "steps": 48,
+        "mu": 0.0,
+        "std": 1.5
+      }
+    }
+  ]
+}

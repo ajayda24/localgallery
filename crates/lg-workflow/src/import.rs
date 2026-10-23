@@ -562,6 +562,7 @@ pub fn blueprint_tool(
             role: r.name.clone(),
             folder: r.directory.clone(),
             optional: false,
+            ops: vec![],
             variants: vec![lg_types::FileVariant {
                 name: r.name.clone(),
                 precision: guess_precision(&r.name),

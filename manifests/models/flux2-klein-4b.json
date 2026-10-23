@@ -1,0 +1,497 @@
+{
+  "schema": 1,
+  "id": "flux2-klein-4b",
+  "display_name": "FLUX.2 Klein 4B",
+  "family": "flux2",
+  "media": "image",
+  "description": "Small FLUX.2 model for text to image and instruction editing, with any number of reference images.",
+  "tags": [
+    "image",
+    "edit",
+    "references",
+    "lora"
+  ],
+  "license": {
+    "name": "See model card",
+    "commercial": false,
+    "url": "https://huggingface.co/black-forest-labs"
+  },
+  "files": [
+    {
+      "role": "diffusion",
+      "folder": "diffusion_models",
+      "variants": [
+        {
+          "name": "flux-2-klein-base-4b-fp8.safetensors",
+          "precision": "fp8",
+          "size_gb": 0,
+          "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4b-fp8/resolve/main/flux-2-klein-base-4b-fp8.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "text_encoder",
+      "folder": "text_encoders",
+      "variants": [
+        {
+          "name": "qwen_3_4b.safetensors",
+          "precision": "bf16",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "vae",
+      "folder": "vae",
+      "variants": [
+        {
+          "name": "flux2-vae.safetensors",
+          "precision": "fp32",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors"
+        }
+      ]
+    }
+  ],
+  "memory": {
+    "activation_gb_per_mp": 0.9,
+    "vae_gb_per_mp": 1.5
+  },
+  "ops": {
+    "txt2img": {
+      "workflow": "workflows/flux2klein/txt2img.json",
+      "expand": [
+        {
+          "input": "refs",
+          "chain": [
+            [
+              "4",
+              0
+            ]
+          ],
+          "head": "ref",
+          "fragment": {
+            "load": {
+              "class_type": "LoadImage",
+              "inputs": {
+                "image": "{{item|asset}}"
+              }
+            },
+            "scale": {
+              "class_type": "ImageScaleToTotalPixels",
+              "inputs": {
+                "image": [
+                  "@load",
+                  0
+                ],
+                "upscale_method": "lanczos",
+                "megapixels": 1,
+                "resolution_steps": 1
+              }
+            },
+            "enc": {
+              "class_type": "VAEEncode",
+              "inputs": {
+                "pixels": [
+                  "@scale",
+                  0
+                ],
+                "vae": [
+                  "3",
+                  0
+                ]
+              }
+            },
+            "ref": {
+              "class_type": "ReferenceLatent",
+              "inputs": {
+                "conditioning": "{{prev:0}}",
+                "latent": [
+                  "@enc",
+                  0
+                ]
+              }
+            }
+          }
+        },
+        {
+          "input": "refs",
+          "chain": [
+            [
+              "5",
+              0
+            ]
+          ],
+          "head": "ref",
+          "fragment": {
+            "load": {
+              "class_type": "LoadImage",
+              "inputs": {
+                "image": "{{item|asset}}"
+              }
+            },
+            "scale": {
+              "class_type": "ImageScaleToTotalPixels",
+              "inputs": {
+                "image": [
+                  "@load",
+                  0
+                ],
+                "upscale_method": "lanczos",
+                "megapixels": 1,
+                "resolution_steps": 1
+              }
+            },
+            "enc": {
+              "class_type": "VAEEncode",
+              "inputs": {
+                "pixels": [
+                  "@scale",
+                  0
+                ],
+                "vae": [
+                  "3",
+                  0
+                ]
+              }
+            },
+            "ref": {
+              "class_type": "ReferenceLatent",
+              "inputs": {
+                "conditioning": "{{prev:0}}",
+                "latent": [
+                  "@enc",
+                  0
+                ]
+              }
+            }
+          }
+        },
+        {
+          "input": "loras",
+          "chain": [
+            [
+              "1",
+              0
+            ]
+          ],
+          "head": "lora",
+          "fragment": {
+            "lora": {
+              "class_type": "LoraLoaderModelOnly",
+              "inputs": {
+                "model": "{{prev:0}}",
+                "lora_name": "{{item.file}}",
+                "strength_model": "{{item.strength}}"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "edit": {
+      "workflow": "workflows/flux2klein/edit.json",
+      "expand": [
+        {
+          "input": "refs",
+          "chain": [
+            [
+              "10",
+              0
+            ]
+          ],
+          "head": "ref",
+          "fragment": {
+            "load": {
+              "class_type": "LoadImage",
+              "inputs": {
+                "image": "{{item|asset}}"
+              }
+            },
+            "scale": {
+              "class_type": "ImageScaleToTotalPixels",
+              "inputs": {
+                "image": [
+                  "@load",
+                  0
+                ],
+                "upscale_method": "lanczos",
+                "megapixels": 1,
+                "resolution_steps": 1
+              }
+            },
+            "enc": {
+              "class_type": "VAEEncode",
+              "inputs": {
+                "pixels": [
+                  "@scale",
+                  0
+                ],
+                "vae": [
+                  "3",
+                  0
+                ]
+              }
+            },
+            "ref": {
+              "class_type": "ReferenceLatent",
+              "inputs": {
+                "conditioning": "{{prev:0}}",
+                "latent": [
+                  "@enc",
+                  0
+                ]
+              }
+            }
+          }
+        },
+        {
+          "input": "refs",
+          "chain": [
+            [
+              "11",
+              0
+            ]
+          ],
+          "head": "ref",
+          "fragment": {
+            "load": {
+              "class_type": "LoadImage",
+              "inputs": {
+                "image": "{{item|asset}}"
+              }
+            },
+            "scale": {
+              "class_type": "ImageScaleToTotalPixels",
+              "inputs": {
+                "image": [
+                  "@load",
+                  0
+                ],
+                "upscale_method": "lanczos",
+                "megapixels": 1,
+                "resolution_steps": 1
+              }
+            },
+            "enc": {
+              "class_type": "VAEEncode",
+              "inputs": {
+                "pixels": [
+                  "@scale",
+                  0
+                ],
+                "vae": [
+                  "3",
+                  0
+                ]
+              }
+            },
+            "ref": {
+              "class_type": "ReferenceLatent",
+              "inputs": {
+                "conditioning": "{{prev:0}}",
+                "latent": [
+                  "@enc",
+                  0
+                ]
+              }
+            }
+          }
+        },
+        {
+          "input": "loras",
+          "chain": [
+            [
+              "1",
+              0
+            ]
+          ],
+          "head": "lora",
+          "fragment": {
+            "lora": {
+              "class_type": "LoraLoaderModelOnly",
+              "inputs": {
+                "model": "{{prev:0}}",
+                "lora_name": "{{item.file}}",
+                "strength_model": "{{item.strength}}"
+              }
+            }
+          }
+        }
+      ],
+      "requires": [
+        "image"
+      ]
+    }
+  },
+  "inputs": [
+    {
+      "id": "image",
+      "kind": "image",
+      "label": "Image to edit",
+      "ops": [
+        "edit"
+      ]
+    },
+    {
+      "id": "prompt",
+      "kind": "text",
+      "label": "Prompt",
+      "help": "For edits, say what to change.",
+      "required": true
+    },
+    {
+      "id": "refs",
+      "kind": "image_list",
+      "label": "Reference images",
+      "help": "Extra images for style, characters or objects.",
+      "level": "advanced",
+      "extra": {
+        "max_items": 6
+      }
+    },
+    {
+      "id": "negative",
+      "kind": "negative_text",
+      "label": "Avoid",
+      "level": "advanced",
+      "default": ""
+    },
+    {
+      "id": "size",
+      "kind": "size",
+      "label": "Size",
+      "ops": [
+        "txt2img"
+      ],
+      "default": {
+        "w": 1024,
+        "h": 1024
+      },
+      "options": [
+        {
+          "value": {
+            "w": 1024,
+            "h": 1024
+          },
+          "label": "Square 1:1"
+        },
+        {
+          "value": {
+            "w": 832,
+            "h": 1216
+          },
+          "label": "Portrait 2:3"
+        },
+        {
+          "value": {
+            "w": 768,
+            "h": 1344
+          },
+          "label": "Tall 9:16"
+        },
+        {
+          "value": {
+            "w": 1216,
+            "h": 832
+          },
+          "label": "Landscape 3:2"
+        },
+        {
+          "value": {
+            "w": 1344,
+            "h": 768
+          },
+          "label": "Wide 16:9"
+        },
+        {
+          "value": {
+            "w": 1536,
+            "h": 1536
+          },
+          "label": "Large square"
+        }
+      ],
+      "extra": {
+        "multiple_of": 16,
+        "max_pixels": 4194304
+      }
+    },
+    {
+      "id": "megapixels",
+      "kind": "float",
+      "label": "Working resolution (MP)",
+      "ops": [
+        "edit"
+      ],
+      "level": "advanced",
+      "default": 1.0,
+      "min": 0.25,
+      "max": 4,
+      "step": 0.25
+    },
+    {
+      "id": "seed",
+      "kind": "seed",
+      "label": "Seed",
+      "level": "advanced",
+      "default": -1
+    },
+    {
+      "id": "steps",
+      "kind": "int",
+      "label": "Steps",
+      "level": "advanced",
+      "default": 20,
+      "min": 1,
+      "max": 60
+    },
+    {
+      "id": "cfg",
+      "kind": "float",
+      "label": "Guidance",
+      "level": "advanced",
+      "default": 5.0,
+      "min": 1,
+      "max": 12,
+      "step": 0.5
+    },
+    {
+      "id": "batch",
+      "kind": "int",
+      "label": "Images per run",
+      "level": "advanced",
+      "ops": [
+        "txt2img"
+      ],
+      "default": 1,
+      "min": 1,
+      "max": 4
+    },
+    {
+      "id": "loras",
+      "kind": "lora_stack",
+      "label": "LoRAs",
+      "level": "advanced",
+      "extra": {
+        "folder": "loras",
+        "max_items": 8
+      }
+    },
+    {
+      "id": "weight_dtype",
+      "kind": "enum",
+      "label": "Weight storage",
+      "help": "fp8 halves the diffusion model's memory. 'fast' also uses fp8 math on GPUs that support it.",
+      "level": "ultra",
+      "default": "default",
+      "options": [
+        "default",
+        "fp8_e4m3fn",
+        "fp8_e4m3fn_fast",
+        "fp8_e5m2"
+      ]
+    }
+  ]
+}

@@ -278,6 +278,23 @@ fn apply_filter(
             Value::String(items.join(sep))
         }
         "asset" => map_assets(v, scope)?,
+        // "a, b , ,c" -> ["a", "b", "c"]
+        "split" => {
+            let sep = arg.unwrap_or(",");
+            match v {
+                Value::Array(_) => v,
+                other => {
+                    let s = other.as_str().map(str::to_string).unwrap_or_default();
+                    Value::Array(
+                        s.split(sep)
+                            .map(str::trim)
+                            .filter(|x| !x.is_empty())
+                            .map(|x| json!(x))
+                            .collect(),
+                    )
+                }
+            }
+        }
         "bbox_state" => {
             // The canvas size: a size input id, or a literal like `1024x768`.
             let a = need_arg()?.trim();
@@ -422,6 +439,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(eval("neg|default:ugly", &scope).unwrap(), json!("ugly"));
+        assert_eq!(eval("prompt|split: ", &scope).unwrap(), json!(["a", "cat"]));
         assert_eq!(
             eval("sp|json", &scope).unwrap(),
             json!("{\"subject\":\"cat\"}")
