@@ -144,10 +144,35 @@ pub fn plan(i: &Input) -> Plan {
     let Some(gpu) = gpu.filter(|g| g.vram_total_gb > 0.5) else {
         explain
             .push("No supported GPU found, so this runs on the CPU. It will be very slow.".into());
+        // Still choose files: downloaded first, otherwise the smallest, which suits RAM best.
+        let mut variants = Vec::new();
+        let mut downloads = Vec::new();
+        let mut precision = None;
+        for f in i.manifest.files.iter().filter(|f| f.needed_for(i.op)) {
+            let v = f
+                .variants
+                .iter()
+                .find(|v| i.on_disk.contains_key(&v.name))
+                .or_else(|| {
+                    f.variants
+                        .iter()
+                        .filter(|v| v.size_gb > 0.0)
+                        .min_by(|a, b| a.size_gb.total_cmp(&b.size_gb))
+                })
+                .or(f.variants.first());
+            let Some(v) = v else { continue };
+            if !i.on_disk.contains_key(&v.name) {
+                downloads.push((v.name.clone(), v.size_gb));
+            }
+            if component(f) == Component::Main {
+                precision = Some(v.precision);
+            }
+            variants.push((f.role.clone(), v.name.clone()));
+        }
         return finish(
             Fit::Offload,
-            vec![],
-            None,
+            variants,
+            precision,
             vec!["--cpu".into()],
             false,
             BTreeMap::new(),
@@ -156,7 +181,7 @@ pub fn plan(i: &Input) -> Plan {
             None,
             explain,
             warnings,
-            vec![],
+            downloads,
         );
     };
     let laptop_extra = if i.hw.laptop == Some(true) { 0.3 } else { 0.0 };
@@ -852,6 +877,12 @@ mod tests {
         let m = model(&[("sdxl", Precision::Fp16, 5.1)], 1.6);
         let p = run(&pc, &m, 512.0, 512.0, &Settings::default(), &[], 0);
         assert_eq!(p.launch_flags, vec!["--cpu".to_string()]);
+        assert_eq!(
+            p.variants.len(),
+            3,
+            "files are chosen even without a GPU: {:?}",
+            p.variants
+        );
     }
 
     #[test]

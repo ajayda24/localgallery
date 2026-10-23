@@ -918,7 +918,9 @@ async fn ui(State(app): State<S>, req: Request) -> Response {
         Ok(b) => {
             let mime = mime_guess::from_path(&file).first_or_octet_stream();
             let cache = if file.ends_with("index.html") { "no-cache" } else { "public, max-age=31536000, immutable" };
-            ([(header::CONTENT_TYPE, mime.to_string()), (header::CACHE_CONTROL, cache.to_string())], b).into_response()
+            // The UI only talks to this server; block everything else.
+            let csp = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; script-src 'self'; object-src 'none'; frame-ancestors 'none'";
+            ([(header::CONTENT_TYPE, mime.to_string()), (header::CACHE_CONTROL, cache.to_string()), (header::CONTENT_SECURITY_POLICY, csp.to_string())], b).into_response()
         }
         Err(_) => (StatusCode::OK, [(header::CONTENT_TYPE, "text/html")], "<h1>LocalGallery</h1><p>The interface has not been built. Run <code>npm run build</code> in apps/desktop.</p>").into_response(),
     }

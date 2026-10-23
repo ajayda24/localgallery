@@ -220,6 +220,15 @@ async fn core_end_to_end_with_fake_engine() {
             .is_some_and(|e| !e.is_empty())
     );
 
+    // ---- the very first job, before the engine has reported a GPU ----
+    let j = c
+        .run(json!({"model": "z-image-turbo", "op": "txt2img", "values": {"prompt": "first"}}))
+        .await;
+    assert_eq!(
+        j["status"], "done",
+        "files are chosen even before a GPU is known: {j}"
+    );
+
     // ---- plan ----
     let (_, p) = c.post("/api/plan", json!({"model": "sd-checkpoint", "op": "txt2img", "values": {"prompt": "x", "size": {"w": 1216, "h": 832}}})).await;
     assert_eq!(p["ok"], true, "{p}");
@@ -320,7 +329,7 @@ async fn core_end_to_end_with_fake_engine() {
     let j = c.run(json!({"model": "z-image-turbo", "op": "txt2img", "batch": 3, "values": {"prompt": "fox", "seed": 100, "size": {"w": 512, "h": 512}}})).await;
     assert_eq!(j["outputs"].as_array().unwrap().len(), 3);
     let seeds: Vec<i64> = c
-        .get("/api/outputs?model=z-image-turbo")
+        .get("/api/outputs?model=z-image-turbo&search=fox")
         .await
         .as_array()
         .unwrap()
