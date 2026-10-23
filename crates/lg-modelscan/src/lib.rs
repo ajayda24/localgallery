@@ -258,9 +258,7 @@ fn ggml_type(t: u32) -> &'static str {
     }
 }
 
-fn read_gguf(
-    path: &Path,
-) -> Result<GgufHeader, ScanError> {
+fn read_gguf(path: &Path) -> Result<GgufHeader, ScanError> {
     let mut r = BufReader::new(File::open(path)?);
     if &rd::<4>(&mut r)? != b"GGUF" {
         return Err(ScanError::Format("missing GGUF magic".into()));
@@ -617,9 +615,10 @@ fn walk(base: &Path, dir: &Path, folder: &str, out: &mut Vec<(String, PathBuf)>,
             .extension()
             .and_then(|x| x.to_str())
             .is_some_and(|x| MODEL_EXTS.contains(&x.to_ascii_lowercase().as_str()))
-            && let Ok(rel) = p.strip_prefix(base) {
-                out.push((folder.to_string(), rel.to_path_buf()));
-            }
+            && let Ok(rel) = p.strip_prefix(base)
+        {
+            out.push((folder.to_string(), rel.to_path_buf()));
+        }
     }
 }
 

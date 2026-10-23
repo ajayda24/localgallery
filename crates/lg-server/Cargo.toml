@@ -1,7 +1,47 @@
 [package]
 name = "lg-server"
+description = "LocalGallery core: HTTP/WS API, job queue, engine and model management."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "localgallery-core"
+path = "src/main.rs"
+
 [dependencies]
+lg-types.workspace = true
+lg-workflow.workspace = true
+lg-manifests.workspace = true
+lg-hwprobe.workspace = true
+lg-modelscan.workspace = true
+lg-planner.workspace = true
+lg-downloader.workspace = true
+lg-store.workspace = true
+lg-engine.workspace = true
+lg-fakecomfy.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+image.workspace = true
+base64.workspace = true
+chrono.workspace = true
+rand.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+parking_lot.workspace = true
+mime_guess.workspace = true
+clap.workspace = true
+reqwest.workspace = true
+notify.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio-tungstenite.workspace = true
+parking_lot.workspace = true
