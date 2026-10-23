@@ -237,7 +237,7 @@ pub fn check(m: &Manifest, root: &Path) -> Vec<String> {
         }
         if matches!(i.kind, InputKind::Enum | InputKind::Motion)
             && i.options.is_empty()
-            && i.extra.get("object_info").is_none()
+            && !i.extra.contains_key("object_info")
         {
             problems.push(format!("input {} is a choice with no options", i.id));
         }
