@@ -248,10 +248,27 @@ pub fn import(workflow: &Value, object_info: &Value) -> Result<Imported, BindErr
     })
 }
 
+/// Remove file loaders left empty (optional uploads not given) and everything that
+/// can no longer run without them.
+pub fn drop_empty_loaders(graph: &mut Value, object_info: &Value) {
+    if let Some(nodes) = graph.as_object_mut() {
+        nodes.retain(|_, n| {
+            let empty = |k: &str| n["inputs"].get(k).and_then(Value::as_str) == Some("");
+            !match n["class_type"].as_str().unwrap_or_default() {
+                "LoadImage" | "LoadImageMask" => empty("image"),
+                "LoadVideo" => empty("file"),
+                "LoadAudio" => empty("audio"),
+                _ => false,
+            }
+        });
+    }
+    prune_unfed(graph, object_info);
+}
+
 /// Blueprints leave some subgraph inputs unconnected on purpose (optional extras,
 /// debug previews). Drop nodes missing a required socket input, then optional links to
 /// dropped nodes, until nothing changes; the editor does the same at queue time.
-fn prune_unfed(graph: &mut Value, object_info: &Value) {
+pub fn prune_unfed(graph: &mut Value, object_info: &Value) {
     let Some(nodes) = graph.as_object_mut() else {
         return;
     };
@@ -263,12 +280,7 @@ fn prune_unfed(graph: &mut Value, object_info: &Value) {
                 inputs_of(object_info, class)
                     .unwrap_or_default()
                     .iter()
-                    .any(|d| {
-                        d.required
-                            && !d.is_widget()
-                            && !d.ty.starts_with("COMFY_")
-                            && n["inputs"].get(&d.name).is_none()
-                    })
+                    .any(|d| d.required && !d.is_widget() && n["inputs"].get(&d.name).is_none())
             })
             .map(|(k, _)| k.clone())
             .collect();
@@ -276,6 +288,7 @@ fn prune_unfed(graph: &mut Value, object_info: &Value) {
         for k in &dead {
             nodes.remove(k);
         }
+        let alive: std::collections::HashSet<String> = nodes.keys().cloned().collect();
         for n in nodes.values_mut() {
             let defs = inputs_of(object_info, n["class_type"].as_str().unwrap_or_default())
                 .unwrap_or_default();
@@ -285,7 +298,7 @@ fn prune_unfed(graph: &mut Value, object_info: &Value) {
                     .filter(|(_, v)| {
                         as_link(v)
                             .filter(|_| v[0].is_string())
-                            .is_some_and(|(src, _)| dead.contains(&src))
+                            .is_some_and(|(src, _)| !alive.contains(&src))
                     })
                     .map(|(k, _)| k.clone())
                     .collect();
@@ -377,7 +390,8 @@ pub fn blueprint_tool(
             kind = InputKind::ModelFile;
             level = Level::Ultra;
         }
-        let mut base: String = input
+        // The author's label ("width", "distill_lora") beats the raw widget name ("value").
+        let mut base: String = label
             .chars()
             .map(|ch| {
                 if ch.is_ascii_alphanumeric() {
@@ -387,8 +401,10 @@ pub fn blueprint_tool(
                 }
             })
             .collect();
+        base = base.trim_matches('_').to_string();
         match kind {
             InputKind::Text if !used.contains("prompt") => base = "prompt".into(),
+            InputKind::Seed if !used.contains("seed") => base = "seed".into(),
             InputKind::Image => base = "image".into(),
             InputKind::Mask => base = "mask".into(),
             InputKind::Video => base = "video".into(),
@@ -429,13 +445,12 @@ pub fn blueprint_tool(
                 .collect(),
         });
     }
-    // Pair width/height into one size field when both are exposed on the same node.
+    // Pair width/height into one size field.
     if let (Some(wi), Some(hi)) = (
         fields.iter().position(|f| f.id == "width"),
         fields.iter().position(|f| f.id == "height"),
     ) && fields[wi].targets.len() == 1
         && fields[hi].targets.len() == 1
-        && fields[wi].targets[0].node == fields[hi].targets[0].node
     {
         let mut w = fields[wi].targets[0].clone();
         let mut h = fields[hi].targets[0].clone();
@@ -682,7 +697,7 @@ fn guess_kind(
             let prompt_like = lname.contains("text")
                 || lname.contains("prompt")
                 || def.is_some_and(|d| d.multiline);
-            if prompt_like && negative {
+            if prompt_like && (lname.contains("neg") || (negative && !lname.contains("pos"))) {
                 (InputKind::NegativeText, true)
             } else if prompt_like {
                 (InputKind::Text, true)
@@ -695,16 +710,22 @@ fn guess_kind(
 }
 
 /// Text-encode nodes whose output feeds a sampler's `negative` input.
+/// Nodes whose every consumer is a `negative` input (a dedicated negative encoder).
 fn negative_text_nodes(nodes: &Map<String, Value>) -> Vec<String> {
-    let mut out = Vec::new();
+    let mut neg: HashMap<String, bool> = HashMap::new();
     for node in nodes.values() {
-        if let Some(v) = node.pointer("/inputs/negative")
-            && let Some((src, _)) = as_link(v)
-        {
-            out.push(src);
+        for (name, v) in node["inputs"].as_object().into_iter().flatten() {
+            if let Some((src, _)) = as_link(v).filter(|_| v[0].is_string()) {
+                let is_neg = name.starts_with("negative");
+                let e = neg.entry(src).or_insert(true);
+                *e &= is_neg;
+            }
         }
     }
-    out
+    neg.into_iter()
+        .filter(|(_, n)| *n)
+        .map(|(k, _)| k)
+        .collect()
 }
 
 fn humanize(name: &str) -> String {
@@ -845,7 +866,12 @@ pub fn publish_tool(
             level: f.level,
             group: None,
             default,
-            required: f.kind.is_asset(),
+            // The first upload of each kind is required; further ones (extra references) are optional.
+            required: f.kind.is_asset()
+                && !fields
+                    .iter()
+                    .take_while(|o| o.id != f.id)
+                    .any(|o| o.kind == f.kind),
             ops: vec![],
             min: def.as_ref().and_then(|d| d.min),
             max: def.as_ref().and_then(|d| d.max),

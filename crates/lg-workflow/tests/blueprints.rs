@@ -41,7 +41,7 @@ fn check(path: &Path, info: &Value) -> Result<String, String> {
     let mut values = serde_json::Map::new();
     let mut assets = std::collections::BTreeMap::new();
     for i in &m.inputs {
-        if i.kind.is_asset() {
+        if i.kind.is_asset() && i.required {
             values.insert(i.id.clone(), Value::String(format!("asset-{}", i.id)));
             assets.insert(format!("asset-{}", i.id), format!("{}.png", i.id));
         } else if i.kind == lg_types::InputKind::Text {
@@ -55,7 +55,7 @@ fn check(path: &Path, info: &Value) -> Result<String, String> {
         assets,
         ..Default::default()
     };
-    let (_, g) = lg_workflow::bind(&m, &spec, t, &opts).map_err(|e| {
+    let (_, mut g) = lg_workflow::bind(&m, &spec, t, &opts).map_err(|e| {
         let k: Vec<String> = m
             .inputs
             .iter()
@@ -63,6 +63,7 @@ fn check(path: &Path, info: &Value) -> Result<String, String> {
             .collect();
         format!("bind: {e} [{}]", k.join(", "))
     })?;
+    lg_workflow::import::drop_empty_loaders(&mut g, info);
     let issues = real_issues(&g, info);
     if !issues.is_empty() {
         return Err(format!("bound graph invalid: {issues:?}"));

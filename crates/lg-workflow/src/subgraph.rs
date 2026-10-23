@@ -196,11 +196,7 @@ pub fn flatten(workflow: &Value) -> Result<Flattened, BindError> {
                 .and_then(Value::as_str)
                 .map(str::to_string);
         }
-        let proxies = inst
-            .pointer("/properties/proxyWidgets")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
+        let proxies = proxies_of(inst);
         let values = inst
             .get("widgets_values")
             .and_then(Value::as_array)
@@ -227,14 +223,21 @@ pub fn flatten(workflow: &Value) -> Result<Flattened, BindError> {
                     widget.to_string(),
                 )
             };
-            let label = def
-                .get("inputs")
-                .and_then(Value::as_array)
-                .and_then(|ins| ins.iter().find(|x| x["name"] == widget))
-                .and_then(|x| x.get("label").or(x.get("name")))
-                .and_then(Value::as_str)
-                .unwrap_or(widget)
-                .to_string();
+            let label = if inner == "-1" {
+                input_label(def, |x| x["name"] == widget)
+            } else {
+                // The subgraph input wired to that inner widget names it best.
+                let feeds = feeding_links(def, target.0, widget);
+                input_label(def, |x| {
+                    x.get("linkIds")
+                        .and_then(Value::as_array)
+                        .is_some_and(|ids| {
+                            ids.iter()
+                                .any(|l| l.as_i64().is_some_and(|l| feeds.contains(&l)))
+                        })
+                })
+            }
+            .unwrap_or_else(|| widget.to_string());
             // Direct proxies point into this instance's subgraph, so they are re-targeted on expansion too.
             let scoped = if inner == "-1" {
                 target.clone()
@@ -456,11 +459,7 @@ pub fn flatten(workflow: &Value) -> Result<Flattened, BindError> {
         for n in &added {
             if is_instance(n, &defs) {
                 let nid = node_id(n);
-                let proxies = n
-                    .pointer("/properties/proxyWidgets")
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
+                let proxies = proxies_of(n);
                 let values = n
                     .get("widgets_values")
                     .and_then(Value::as_array)
@@ -523,6 +522,56 @@ pub fn flatten(workflow: &Value) -> Result<Flattened, BindError> {
     );
     out.workflow = Value::Object(wf);
     Ok(out)
+}
+
+/// `[inner, widget]` pairs an instance exposes. Older saves have no `proxyWidgets`; there
+/// every widget input of the instance is a subgraph input, in `widgets_values` order.
+fn proxies_of(inst: &Value) -> Vec<Value> {
+    if let Some(p) = inst
+        .pointer("/properties/proxyWidgets")
+        .and_then(Value::as_array)
+    {
+        return p.clone();
+    }
+    inst.get("inputs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|i| i.pointer("/widget/name").and_then(Value::as_str))
+        .map(|name| json!(["-1", name]))
+        .collect()
+}
+
+fn input_label(def: &Value, pred: impl Fn(&Value) -> bool) -> Option<String> {
+    def.get("inputs")
+        .and_then(Value::as_array)
+        .and_then(|ins| ins.iter().find(|x| pred(x)))
+        .and_then(|x| x.get("label").or(x.get("name")))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// Ids of links that feed `widget` on inner node `node` of a subgraph definition.
+fn feeding_links(def: &Value, node: i64, widget: &str) -> Vec<i64> {
+    def.get("nodes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|n| node_id(n) == node)
+        .flat_map(|n| {
+            n.get("inputs")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .filter(|i| {
+            i.pointer("/widget/name")
+                .or(i.get("name"))
+                .and_then(Value::as_str)
+                == Some(widget)
+        })
+        .filter_map(|i| i.get("link").and_then(Value::as_i64))
+        .collect()
 }
 
 fn is_instance(n: &Value, defs: &HashMap<String, Value>) -> bool {

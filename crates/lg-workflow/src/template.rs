@@ -261,6 +261,8 @@ fn map_assets(v: Value, scope: &Scope) -> Result<Value, BindError> {
             .ok_or_else(|| BindError::MissingAsset(id.to_string()))
     };
     match v {
+        // No upload for an optional input: the server drops its loader node.
+        Value::String(s) if s.is_empty() => Ok(json!("")),
         Value::String(s) => one(&s),
         Value::Array(a) => a
             .iter()
