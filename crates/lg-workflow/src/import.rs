@@ -495,6 +495,30 @@ pub fn blueprint_tool(
             }
         }
     }
+    // An upload is required when leaving it out leaves nothing to run.
+    for f in fields.iter().filter(|f| f.kind.is_asset()) {
+        let mut g = imp.graph.clone();
+        for t in &f.targets {
+            if let Some(inputs) = g
+                .get_mut(&t.node)
+                .and_then(|n| n.get_mut("inputs"))
+                .and_then(Value::as_object_mut)
+            {
+                inputs.insert(t.input.clone(), json!(""));
+            }
+        }
+        drop_empty_loaders(&mut g, object_info);
+        let survives = g.as_object().is_some_and(|m| {
+            m.values().any(|n| {
+                n["class_type"]
+                    .as_str()
+                    .is_some_and(|c| c.starts_with("Save") || c.starts_with("Preview"))
+            })
+        });
+        if let Some(spec) = m.inputs.iter_mut().find(|i| i.id == f.id) {
+            spec.required = !survives;
+        }
+    }
     if let Some(cat) = &imp.category {
         m.tags.push(cat.clone());
     }

@@ -64,6 +64,13 @@ fn check(path: &Path, info: &Value) -> Result<String, String> {
         format!("bind: {e} [{}]", k.join(", "))
     })?;
     lg_workflow::import::drop_empty_loaders(&mut g, info);
+    let has_output = g.as_object().unwrap().values().any(|n| {
+        let c = n["class_type"].as_str().unwrap_or_default();
+        c.starts_with("Save") || c.starts_with("Preview")
+    });
+    if !has_output {
+        return Err("the tool has no output node".into());
+    }
     let issues = real_issues(&g, info);
     if !issues.is_empty() {
         return Err(format!("bound graph invalid: {issues:?}"));

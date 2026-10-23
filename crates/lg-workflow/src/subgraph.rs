@@ -177,6 +177,86 @@ pub fn flatten(workflow: &Value) -> Result<Flattened, BindError> {
             });
         }
     }
+    // Blueprints hand their results to the parent graph; give unconsumed outputs a sink
+    // so the engine has something to run and save.
+    for &inst_id in &top_instances {
+        let inst = nodes
+            .iter()
+            .find(|n| node_id(n) == inst_id)
+            .cloned()
+            .unwrap();
+        for (slot, output) in inst
+            .get("outputs")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .enumerate()
+        {
+            let slot = slot as i64;
+            if links
+                .iter()
+                .any(|l| l[1].as_i64() == Some(inst_id) && l[2].as_i64() == Some(slot))
+            {
+                continue;
+            }
+            let ty = output
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("*")
+                .to_string();
+            let mut chain: Vec<(&str, Value, &str)> = match ty.as_str() {
+                "IMAGE" => vec![(
+                    "SaveImage",
+                    json!({"filename_prefix": "LocalGallery"}),
+                    "IMAGE",
+                )],
+                "VIDEO" => vec![(
+                    "SaveVideo",
+                    json!({"filename_prefix": "LocalGallery", "format": "mp4", "format.codec": "h264"}),
+                    "VIDEO",
+                )],
+                "AUDIO" => vec![(
+                    "SaveAudio",
+                    json!({"filename_prefix": "LocalGallery"}),
+                    "AUDIO",
+                )],
+                "MASK" => vec![
+                    ("MaskToImage", json!({}), "MASK"),
+                    (
+                        "SaveImage",
+                        json!({"filename_prefix": "LocalGallery"}),
+                        "IMAGE",
+                    ),
+                ],
+                "MESH" => vec![(
+                    "SaveGLB",
+                    json!({"filename_prefix": "LocalGallery"}),
+                    "MESH",
+                )],
+                _ => vec![("PreviewAny", json!({}), "*")],
+            };
+            let (mut from, mut from_slot) = (inst_id, slot);
+            for (class, widgets, in_ty) in chain.drain(..) {
+                let id = next_id;
+                next_id += 1;
+                let lid = next_link;
+                next_link += 1;
+                let input_name = match class {
+                    "SaveImage" => "images",
+                    "SaveVideo" => "video",
+                    "SaveAudio" => "audio",
+                    "MaskToImage" => "mask",
+                    "SaveGLB" => "mesh",
+                    _ => "source",
+                };
+                nodes.push(json!({"id": id, "type": class, "mode": 0,
+                    "inputs": [{"name": input_name, "type": in_ty, "link": lid}], "widgets_values": widgets}));
+                links.push(mk(lid, from, from_slot, id, 0, json!(in_ty)));
+                (from, from_slot) = (id, 0);
+            }
+        }
+    }
     // Handles start on the top-level instances' proxied widgets.
     for inst in nodes.iter().filter(|n| is_instance(n, &defs)) {
         let id = node_id(inst);
