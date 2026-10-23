@@ -63,9 +63,21 @@ fn parse_input(name: &str, spec: &Value, required: bool) -> InputDef {
                 .cloned()
                 .unwrap_or_default(),
         ),
+        // Dynamic combo: the value is an option key; the chosen option's sub-inputs
+        // arrive as `<name>.<sub>`.
+        Value::String(t) if t == "COMFY_DYNAMICCOMBO_V3" => (
+            "COMBO".to_string(),
+            opts.get("options")
+                .and_then(Value::as_array)
+                .map(|o| o.iter().filter_map(|x| x.get("key").cloned()).collect())
+                .unwrap_or_default(),
+        ),
         Value::String(t) => (t.clone(), vec![]),
         _ => ("*".to_string(), vec![]),
     };
+    // Growable input lists (`<name>.<item>` keys) are never required as a whole.
+    let required =
+        required && !matches!(ty.as_str(), "COMFY_AUTOGROW_V3" | "COMFY_DYNAMICGROUP_V3");
     let num = |k: &str| opts.get(k).and_then(Value::as_f64);
     InputDef {
         name: name.to_string(),
@@ -197,6 +209,18 @@ pub fn validate(graph: &Value, object_info: &Value) -> Vec<Issue> {
                 None => {}
             }
         }
+        // Sub-inputs of dynamic inputs (`images.image_1`) are not in the class definition.
+        for (name, v) in given.into_iter().flatten().filter(|(k, _)| k.contains('.')) {
+            if let Some((target, _)) = as_link(v).filter(|_| v[0].is_string())
+                && !nodes.contains_key(&target)
+            {
+                issues.push(Issue::DanglingLink {
+                    node: id.clone(),
+                    input: name.clone(),
+                    target,
+                });
+            }
+        }
     }
     issues
 }
@@ -253,6 +277,39 @@ mod tests {
             issues.len(),
             3,
             "seed has a default so it is not missing: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn dynamic_inputs_from_real_object_info() {
+        let real: Value =
+            serde_json::from_str(include_str!("../../../tests/fixtures/object_info.json")).unwrap();
+        let fibo = inputs_of(&real, "TextEncodeFibo2").unwrap();
+        assert!(!fibo.iter().find(|d| d.name == "images").unwrap().required);
+        let ideo = inputs_of(&real, "BuildJsonPromptIdeogram").unwrap();
+        let style = ideo.iter().find(|d| d.name == "style").unwrap();
+        assert_eq!(style.ty, "COMBO");
+        assert!(
+            style.options.contains(&json!("photo")),
+            "{:?}",
+            style.options
+        );
+        let g = json!({
+            "1": {"class_type": "CLIPLoader", "inputs": {"clip_name": "x.safetensors", "type": "fibo2"}},
+            "2": {"class_type": "TextEncodeFibo2", "inputs": {"clip": ["1", 0], "prompt": "{}", "negative_prompt": "", "width": 0, "height": 0, "batch_size": 1, "images.image_1": ["9", 0]}}
+        });
+        let issues = validate(&g, &real);
+        assert!(
+            issues.iter().any(
+                |i| matches!(i, Issue::DanglingLink { input, .. } if input == "images.image_1")
+            ),
+            "{issues:?}"
+        );
+        assert!(
+            !issues
+                .iter()
+                .any(|i| matches!(i, Issue::MissingInput { .. })),
+            "{issues:?}"
         );
     }
 }

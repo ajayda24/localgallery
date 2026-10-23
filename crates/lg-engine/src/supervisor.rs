@@ -115,12 +115,17 @@ impl Supervisor {
         if let Some(parent) = cfg.log_file.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        for d in [
+        // ComfyUI exits at startup if <base>/custom_nodes is missing.
+        let base = [
+            cfg.base_dir.join("custom_nodes"),
+            cfg.base_dir.join("models"),
+        ];
+        for d in base.iter().chain([
             &cfg.output_dir,
             &cfg.input_dir,
             &cfg.temp_dir,
             &cfg.user_dir,
-        ] {
+        ]) {
             let _ = std::fs::create_dir_all(d);
         }
         let mut cmd = Command::new(&cfg.python);

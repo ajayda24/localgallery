@@ -45,6 +45,8 @@ pub struct TorchProfile {
 pub struct Layout {
     pub engines: PathBuf,
     pub data: PathBuf,
+    /// Share a package cache with another install (default: `data/cache/uv`).
+    pub uv_cache: Option<PathBuf>,
 }
 
 impl Layout {
@@ -52,6 +54,7 @@ impl Layout {
         Self {
             engines: app_root.join("engines"),
             data: app_root.join("data"),
+            uv_cache: None,
         }
     }
     pub fn full(&self) -> PathBuf {
@@ -89,7 +92,10 @@ impl Layout {
         let c = self.data.join("cache");
         let s = |p: PathBuf| p.to_string_lossy().into_owned();
         vec![
-            ("UV_CACHE_DIR".into(), s(c.join("uv"))),
+            (
+                "UV_CACHE_DIR".into(),
+                s(self.uv_cache.clone().unwrap_or_else(|| c.join("uv"))),
+            ),
             (
                 "UV_PYTHON_INSTALL_DIR".into(),
                 s(self.engines.join("python")),
@@ -286,8 +292,10 @@ pub fn plan(lock: &Lock, layout: &Layout, opts: &InstallOptions) -> Result<Vec<S
             py,
             "-r".into(),
             reqs,
+            // Relative on purpose: uv cuts `-c` paths at the first space, so this
+            // runs with the working directory set to engines/full (see `command`).
             "-c".into(),
-            layout.constraints().to_string_lossy().into_owned(),
+            "constraints.txt".into(),
         ],
     });
     steps.push(Step::SelfTest {
@@ -395,8 +403,12 @@ pub async fn run(
     let n = steps.len();
     let mut test = None;
     let http = lg_downloader::client();
-    for d in ["tmp", "cache"] {
-        let _ = tokio::fs::create_dir_all(layout.data.join(d)).await;
+    for d in [
+        layout.data.join("tmp"),
+        layout.data.join("cache"),
+        layout.full(),
+    ] {
+        let _ = tokio::fs::create_dir_all(d).await;
     }
     for (i, step) in steps.iter().enumerate() {
         if cancel.is_cancelled() {
@@ -500,6 +512,7 @@ pub async fn run(
 fn command(program: &Path, args: &[String], layout: &Layout) -> tokio::process::Command {
     let mut c = tokio::process::Command::new(program);
     c.args(args)
+        .current_dir(layout.full())
         .envs(layout.child_env())
         .env("PYTHONNOUSERSITE", "1")
         .env_remove("VIRTUAL_ENV")

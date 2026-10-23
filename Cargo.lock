@@ -1024,6 +1024,7 @@ dependencies = [
  "lg-downloader",
  "lg-fakecomfy",
  "lg-types",
+ "lg-workflow",
  "parking_lot",
  "reqwest",
  "serde",

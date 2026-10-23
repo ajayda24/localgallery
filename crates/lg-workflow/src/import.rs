@@ -119,11 +119,12 @@ pub fn to_api(workflow: &Value, object_info: &Value) -> Result<Value, BindError>
                     _ => None,
                 };
                 if let Some(link) = linked(&def.name)
-                    && let Some(src) = resolve_source(link, &links, &by_id, &def.ty) {
-                        inputs.insert(def.name.clone(), src);
-                        continue;
-                    }
-                    // Linked to an editor-only primitive: the value is still in widgets_values.
+                    && let Some(src) = resolve_source(link, &links, &by_id, &def.ty)
+                {
+                    inputs.insert(def.name.clone(), src);
+                    continue;
+                }
+                // Linked to an editor-only primitive: the value is still in widgets_values.
                 if let Some(v) = wv {
                     inputs.insert(def.name.clone(), v);
                 }
