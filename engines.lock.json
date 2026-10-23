@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "comfyui": {
+    "repo": "https://github.com/comfyanonymous/ComfyUI",
+    "commit": "9fe7ef764d0452dcc9dcb925efd076d4e68eece1",
+    "date": "2026-10-23",
+    "archive": "https://github.com/comfyanonymous/ComfyUI/archive/{commit}.zip"
+  },
+  "python": "3.13",
+  "uv": {
+    "version": "0.11.32",
+    "windows_zip": "https://github.com/astral-sh/uv/releases/download/{version}/uv-x86_64-pc-windows-msvc.zip"
+  },
+  "torch": {
+    "cuda": {
+      "index": "https://download.pytorch.org/whl/cu130",
+      "packages": ["torch", "torchvision", "torchaudio"],
+      "note": "CUDA 13.0 wheels support Blackwell (sm_120). Exact versions are recorded after install into engines/full/constraints.txt."
+    },
+    "cpu": {
+      "index": "https://download.pytorch.org/whl/cpu",
+      "packages": ["torch", "torchvision", "torchaudio"]
+    }
+  },
+  "never_install": ["xformers"],
+  "notes": [
+    "ComfyUI's own portable build ships Python 3.13 with PyTorch cu130 (README at the pinned commit).",
+    "Video files are written by ComfyUI's SaveVideo node through PyAV, which bundles FFmpeg, so no separate FFmpeg download is needed."
+  ]
+}

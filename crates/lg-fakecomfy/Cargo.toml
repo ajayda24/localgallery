@@ -1,0 +1,25 @@
+[package]
+name = "lg-fakecomfy"
+description = "A fake ComfyUI server speaking the real HTTP/WS protocol, for tests and GPU-less development."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "lg-fakecomfy"
+path = "src/main.rs"
+
+[dependencies]
+lg-workflow.workspace = true
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+image.workspace = true
+parking_lot.workspace = true
+uuid.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+anyhow.workspace = true
