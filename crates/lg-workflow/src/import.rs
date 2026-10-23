@@ -12,13 +12,7 @@ use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, HashMap};
 
 /// Nodes that only exist in the editor.
-const EDITOR_ONLY: &[&str] = &[
-    "Note",
-    "MarkdownNote",
-    "PrimitiveNode",
-    "PrimitiveString",
-    "Label (rgthree)",
-];
+const EDITOR_ONLY: &[&str] = &["Note", "MarkdownNote", "PrimitiveNode", "Label (rgthree)"];
 
 pub fn is_api_format(v: &Value) -> bool {
     v.as_object()
@@ -38,14 +32,8 @@ pub fn to_api(workflow: &Value, object_info: &Value) -> Result<Value, BindError>
         .get("nodes")
         .and_then(Value::as_array)
         .ok_or_else(|| BindError::Template("not a ComfyUI workflow (no nodes)".into()))?;
-    if workflow
-        .pointer("/definitions/subgraphs")
-        .and_then(Value::as_array)
-        .is_some_and(|s| !s.is_empty())
-    {
-        return Err(BindError::Template(
-            "this workflow uses subgraphs; open it in ComfyUI and use Export (API), then import that file".into(),
-        ));
+    if crate::subgraph::has_subgraphs(workflow) {
+        return import(workflow, object_info).map(|i| i.graph);
     }
 
     // link id -> (from node, from slot)
@@ -107,33 +95,13 @@ pub fn to_api(workflow: &Value, object_info: &Value) -> Result<Value, BindError>
         let widgets = node.get("widgets_values");
         let mut wi = 0usize;
         let mut inputs = Map::new();
-        for def in &defs {
-            if def.is_widget() {
-                let wv = match widgets {
-                    Some(Value::Object(o)) => o.get(&def.name).cloned(),
-                    Some(Value::Array(a)) => {
-                        let v = a.get(wi).cloned();
-                        wi += 1 + usize::from(def.control_after_generate);
-                        v
-                    }
-                    _ => None,
-                };
-                if let Some(link) = linked(&def.name)
-                    && let Some(src) = resolve_source(link, &links, &by_id, &def.ty)
-                {
-                    inputs.insert(def.name.clone(), src);
-                    continue;
-                }
-                // Linked to an editor-only primitive: the value is still in widgets_values.
-                if let Some(v) = wv {
-                    inputs.insert(def.name.clone(), v);
-                }
-            } else if let Some(link) = linked(&def.name)
-                && let Some(src) = resolve_source(link, &links, &by_id, &def.ty)
-            {
-                inputs.insert(def.name.clone(), src);
-            }
-        }
+        let ctx = Fill {
+            widgets,
+            linked: &linked,
+            links: &links,
+            by_id: &by_id,
+        };
+        fill(&ctx, &defs, "", &mut wi, &mut inputs);
         let mut n = json!({"class_type": class, "inputs": inputs});
         if let Some(title) = node.get("title").and_then(Value::as_str) {
             n["_meta"] = json!({"title": title});
@@ -149,6 +117,421 @@ pub fn to_api(workflow: &Value, object_info: &Value) -> Result<Value, BindError>
         )));
     }
     Ok(Value::Object(out))
+}
+
+struct Fill<'a> {
+    widgets: Option<&'a Value>,
+    linked: &'a dyn Fn(&str) -> Option<i64>,
+    links: &'a HashMap<i64, (i64, u64)>,
+    by_id: &'a HashMap<i64, &'a Value>,
+}
+
+/// Assign widget values (in order) and links to `defs`, recursing into the inputs a
+/// dynamic combo's chosen option adds (`<combo>.<sub>`).
+fn fill(
+    c: &Fill,
+    defs: &[InputDef],
+    prefix: &str,
+    wi: &mut usize,
+    inputs: &mut Map<String, Value>,
+) {
+    for def in defs {
+        let name = format!("{prefix}{}", def.name);
+        let src = (c.linked)(&name).and_then(|l| resolve_source(l, c.links, c.by_id, &def.ty));
+        if def.is_widget() {
+            let wv = match c.widgets {
+                Some(Value::Object(o)) => o.get(&name).cloned(),
+                Some(Value::Array(a)) => {
+                    let v = a.get(*wi).cloned();
+                    *wi += 1 + usize::from(def.control_after_generate);
+                    v
+                }
+                _ => None,
+            };
+            // A widget linked to an editor-only primitive keeps its value in widgets_values.
+            match (src, wv.clone()) {
+                (Some(s), _) => {
+                    inputs.insert(name.clone(), s);
+                }
+                (None, Some(v)) => {
+                    inputs.insert(name.clone(), v);
+                }
+                _ => {}
+            }
+            if !def.sub.is_empty()
+                && let Some(key) = inputs.get(&name).cloned()
+                && let Some((_, sub)) = def.sub.iter().find(|(k, _)| *k == key)
+            {
+                fill(c, sub, &format!("{name}."), wi, inputs);
+            }
+        } else if let Some(s) = src {
+            inputs.insert(name, s);
+        }
+    }
+}
+
+/// A workflow converted to API format, with what its author chose to expose.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Imported {
+    pub graph: Value,
+    /// Widgets exposed by subgraph instances (blueprints), as `(label, [(node, input)])`.
+    pub exposed: Vec<(String, Vec<(String, String)>)>,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub category: Option<String>,
+    /// Model files referenced by loader nodes (`properties.models`).
+    pub models: Vec<ModelRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModelRef {
+    pub name: String,
+    pub url: Option<String>,
+    pub directory: String,
+}
+
+/// Convert any workflow (API, editor format, or subgraph blueprint) to API format.
+pub fn import(workflow: &Value, object_info: &Value) -> Result<Imported, BindError> {
+    if !crate::subgraph::has_subgraphs(workflow) {
+        let graph = to_api(workflow, object_info)?;
+        return Ok(Imported {
+            models: collect_models(workflow),
+            graph,
+            exposed: vec![],
+            title: None,
+            description: None,
+            category: None,
+        });
+    }
+    let flat = crate::subgraph::flatten(workflow)?;
+    let mut graph = to_api(&flat.workflow, object_info)?;
+    prune_unfed(&mut graph, object_info);
+    let nodes = graph.as_object_mut().expect("api graph is an object");
+    for ((node, input), v) in &flat.overrides {
+        if let Some(inputs) = nodes
+            .get_mut(&node.to_string())
+            .and_then(|n| n.get_mut("inputs"))
+            .and_then(Value::as_object_mut)
+        {
+            // Never overwrite a link with a widget value.
+            if inputs.get(input).is_none_or(|cur| as_link(cur).is_none()) {
+                inputs.insert(input.clone(), v.clone());
+            }
+        }
+    }
+    let exposed = flat
+        .exposed
+        .iter()
+        .map(|e| {
+            let targets: Vec<(String, String)> = e
+                .targets
+                .iter()
+                .map(|(n, i)| (n.to_string(), i.clone()))
+                .filter(|(n, i)| {
+                    nodes
+                        .get(n)
+                        .and_then(|x| x["inputs"].get(i))
+                        .is_some_and(|v| as_link(v).is_none())
+                })
+                .collect();
+            (e.label.clone(), targets)
+        })
+        .filter(|(_, t)| !t.is_empty())
+        .collect();
+    Ok(Imported {
+        models: collect_models(&flat.workflow),
+        graph,
+        exposed,
+        title: flat.title,
+        description: flat.description,
+        category: flat.category,
+    })
+}
+
+/// Blueprints leave some subgraph inputs unconnected on purpose (optional extras,
+/// debug previews). Drop nodes missing a required socket input, then optional links to
+/// dropped nodes, until nothing changes; the editor does the same at queue time.
+fn prune_unfed(graph: &mut Value, object_info: &Value) {
+    let Some(nodes) = graph.as_object_mut() else {
+        return;
+    };
+    loop {
+        let dead: Vec<String> = nodes
+            .iter()
+            .filter(|(_, n)| {
+                let class = n["class_type"].as_str().unwrap_or_default();
+                inputs_of(object_info, class)
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|d| {
+                        d.required
+                            && !d.is_widget()
+                            && !d.ty.starts_with("COMFY_")
+                            && n["inputs"].get(&d.name).is_none()
+                    })
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+        let mut changed = !dead.is_empty();
+        for k in &dead {
+            nodes.remove(k);
+        }
+        for n in nodes.values_mut() {
+            let defs = inputs_of(object_info, n["class_type"].as_str().unwrap_or_default())
+                .unwrap_or_default();
+            if let Some(inputs) = n.get_mut("inputs").and_then(Value::as_object_mut) {
+                let cut: Vec<String> = inputs
+                    .iter()
+                    .filter(|(_, v)| {
+                        as_link(v)
+                            .filter(|_| v[0].is_string())
+                            .is_some_and(|(src, _)| dead.contains(&src))
+                    })
+                    .map(|(k, _)| k.clone())
+                    .collect();
+                for k in cut {
+                    changed = true;
+                    // A widget that was fed by a dropped node falls back to its default.
+                    match defs.iter().find(|d| d.name == k && d.is_widget()) {
+                        Some(d) => {
+                            let v = d.default.clone().unwrap_or_else(|| match d.ty.as_str() {
+                                "STRING" => json!(""),
+                                "BOOLEAN" => json!(false),
+                                "COMBO" => d.options.first().cloned().unwrap_or(json!("")),
+                                _ => json!(0),
+                            });
+                            inputs.insert(k, v);
+                        }
+                        None => {
+                            inputs.remove(&k);
+                        }
+                    }
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+}
+
+fn collect_models(workflow: &Value) -> Vec<ModelRef> {
+    let mut out: Vec<ModelRef> = Vec::new();
+    let mut visit = |nodes: Option<&Vec<Value>>| {
+        for n in nodes.into_iter().flatten() {
+            for m in n
+                .pointer("/properties/models")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                if let Ok(r) = serde_json::from_value::<ModelRef>(m.clone())
+                    && !out
+                        .iter()
+                        .any(|o| o.name == r.name && o.directory == r.directory)
+                {
+                    out.push(r);
+                }
+            }
+        }
+    };
+    visit(workflow.get("nodes").and_then(Value::as_array));
+    for sg in workflow
+        .pointer("/definitions/subgraphs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        visit(sg.get("nodes").and_then(Value::as_array));
+    }
+    out
+}
+
+/// Build a ready-to-use tool from an imported blueprint: its exposed widgets become
+/// the form, and its referenced model files become downloads.
+pub fn blueprint_tool(
+    imp: &Imported,
+    object_info: &Value,
+    fallback_name: &str,
+) -> Result<Manifest, BindError> {
+    let candidates = analyze(&imp.graph, object_info);
+    let mut fields: Vec<ToolField> = Vec::new();
+    let mut used = std::collections::HashSet::new();
+    for (label, targets) in &imp.exposed {
+        let (node, input) = &targets[0];
+        let Some(c) = candidates
+            .iter()
+            .find(|c| &c.node == node && &c.input == input)
+        else {
+            continue;
+        };
+        let mut kind = c.kind;
+        let mut level = if c.suggested
+            || matches!(kind, InputKind::Text | InputKind::Image | InputKind::Mask)
+        {
+            Level::Simple
+        } else {
+            Level::Advanced
+        };
+        if kind == InputKind::Enum && input.ends_with("_name") {
+            kind = InputKind::ModelFile;
+            level = Level::Ultra;
+        }
+        let mut base: String = input
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() {
+                    ch.to_ascii_lowercase()
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        match kind {
+            InputKind::Text if !used.contains("prompt") => base = "prompt".into(),
+            InputKind::Image => base = "image".into(),
+            InputKind::Mask => base = "mask".into(),
+            InputKind::Video => base = "video".into(),
+            InputKind::Audio => base = "audio".into(),
+            InputKind::Regions => base = "regions".into(),
+            _ => {}
+        }
+        // Names the template language reserves.
+        if matches!(
+            base.as_str(),
+            "file" | "item" | "index" | "lbrace" | "rbrace"
+        ) || base.starts_with("prev")
+        {
+            base.push_str("_in");
+        }
+        let mut id = base.clone();
+        let mut n = 2;
+        while !used.insert(id.clone()) {
+            id = format!("{base}_{n}");
+            n += 1;
+        }
+        fields.push(ToolField {
+            id,
+            label: if label.chars().next().is_some_and(char::is_lowercase) {
+                humanize(label)
+            } else {
+                label.clone()
+            },
+            kind,
+            level,
+            targets: targets
+                .iter()
+                .map(|(n, i)| FieldTarget {
+                    node: n.clone(),
+                    input: i.clone(),
+                    part: None,
+                })
+                .collect(),
+        });
+    }
+    // Pair width/height into one size field when both are exposed on the same node.
+    if let (Some(wi), Some(hi)) = (
+        fields.iter().position(|f| f.id == "width"),
+        fields.iter().position(|f| f.id == "height"),
+    ) && fields[wi].targets.len() == 1
+        && fields[hi].targets.len() == 1
+        && fields[wi].targets[0].node == fields[hi].targets[0].node
+    {
+        let mut w = fields[wi].targets[0].clone();
+        let mut h = fields[hi].targets[0].clone();
+        w.part = Some("w".into());
+        h.part = Some("h".into());
+        let size = ToolField {
+            id: "size".into(),
+            label: "Size".into(),
+            kind: InputKind::Size,
+            level: Level::Simple,
+            targets: vec![w, h],
+        };
+        let (a, b) = (wi.max(hi), wi.min(hi));
+        fields.remove(a);
+        fields.remove(b);
+        fields.insert(b, size);
+    }
+    let name = imp
+        .title
+        .clone()
+        .unwrap_or_else(|| fallback_name.to_string());
+    let mut m = publish_tool(
+        &imp.graph,
+        object_info,
+        &fields,
+        &ToolMeta {
+            name,
+            description: imp.description.clone().unwrap_or_default(),
+        },
+    )?;
+    for f in &fields {
+        if f.kind == InputKind::ModelFile
+            && let Some(spec) = m.inputs.iter_mut().find(|i| i.id == f.id)
+        {
+            let folder = imp
+                .models
+                .iter()
+                .find(|r| Some(&Value::String(r.name.clone())) == spec.default.as_ref())
+                .map(|r| r.directory.clone());
+            if let Some(folder) = folder {
+                spec.extra.insert("folder".into(), json!(folder));
+            }
+        }
+    }
+    if let Some(cat) = &imp.category {
+        m.tags.push(cat.clone());
+    }
+    m.files = imp
+        .models
+        .iter()
+        .map(|r| lg_types::ModelFile {
+            role: r.name.clone(),
+            folder: r.directory.clone(),
+            optional: false,
+            variants: vec![lg_types::FileVariant {
+                name: r.name.clone(),
+                precision: guess_precision(&r.name),
+                size_gb: 0.0,
+                url: r.url.clone(),
+                sha256: None,
+            }],
+        })
+        .collect();
+    Ok(m)
+}
+
+/// Weight precision from a model file name (`..._fp8_scaled`, `...-Q4_K_M.gguf`, ...).
+pub fn guess_precision(name: &str) -> lg_types::Precision {
+    use lg_types::Precision::*;
+    let n = name.to_ascii_lowercase();
+    if n.ends_with(".gguf") {
+        for (k, p) in [
+            ("q8", Q8),
+            ("q6", Q6),
+            ("q5", Q5),
+            ("q4", Q4),
+            ("q3", Q3),
+            ("q2", Q3),
+        ] {
+            if n.contains(k) {
+                return p;
+            }
+        }
+        return Q8;
+    }
+    if n.contains("nvfp4") || n.contains("fp4") {
+        Nvfp4
+    } else if n.contains("fp8") || n.contains("e4m3") || n.contains("int8") {
+        Fp8
+    } else if n.contains("bf16") {
+        Bf16
+    } else if n.contains("fp32") {
+        Fp32
+    } else {
+        Fp16
+    }
 }
 
 /// Follow a link back through reroutes and bypassed nodes to a real output.
@@ -276,6 +659,7 @@ fn guess_kind(
         ("LoadImageMask", "image") => return (InputKind::Mask, true),
         ("LoadVideo", "file") => return (InputKind::Video, true),
         ("LoadAudio", "audio") => return (InputKind::Audio, true),
+        ("CreateBoundingBoxes", "editor_state") => return (InputKind::Regions, true),
         _ => {}
     }
     let lname = name.to_ascii_lowercase();
@@ -367,8 +751,12 @@ pub fn publish_tool(
     meta: &ToolMeta,
 ) -> Result<Manifest, BindError> {
     let mut g = graph.clone();
+    crate::template::escape(&mut g);
     let mut inputs = Vec::new();
-    for f in fields {
+    // Regions read the canvas size from their node, so they go after size fields.
+    let mut ordered: Vec<&ToolField> = fields.iter().collect();
+    ordered.sort_by_key(|f| f.kind == InputKind::Regions);
+    for f in ordered {
         if !f.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || f.id.is_empty() {
             return Err(BindError::Template(format!(
                 "field id {:?} must be letters, digits or _",
@@ -387,6 +775,7 @@ pub fn publish_tool(
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string();
+            let node_inputs = node["inputs"].clone();
             let slot = node
                 .get_mut("inputs")
                 .and_then(|i| i.get_mut(&t.input))
@@ -407,6 +796,24 @@ pub fn publish_tool(
                 (k, _) if k.is_asset() => format!("{{{{{}|asset}}}}", f.id),
                 (InputKind::ImageList, _) => format!("{{{{{}|asset}}}}", f.id),
                 (InputKind::StructuredPrompt, _) => format!("{{{{{}|json}}}}", f.id),
+                (InputKind::Regions, _) => {
+                    let dim = |k: &str| node_inputs.get(k).cloned().unwrap_or(json!(1024));
+                    let size = match (dim("width"), dim("height")) {
+                        // Bound to a size field: `{{size.w}}` -> `size`.
+                        (Value::String(w), _) if w.starts_with("{{") => w
+                            .trim_matches(|c| c == '{' || c == '}')
+                            .split('.')
+                            .next()
+                            .unwrap_or("size")
+                            .to_string(),
+                        (w, h) => format!(
+                            "{}x{}",
+                            w.as_f64().unwrap_or(1024.0),
+                            h.as_f64().unwrap_or(1024.0)
+                        ),
+                    };
+                    format!("{{{{{}|bbox_state:{size}}}}}", f.id)
+                }
                 _ => {
                     default.get_or_insert(current);
                     format!("{{{{{}}}}}", f.id)
@@ -423,6 +830,9 @@ pub fn publish_tool(
         }
         if f.kind.is_asset() {
             default = None;
+        }
+        if f.kind == InputKind::Regions {
+            default = Some(json!([]));
         }
         let mut spec = InputSpec {
             id: f.id.clone(),

@@ -7,6 +7,7 @@ pub mod expand;
 pub mod import;
 pub mod objectinfo;
 pub mod resolve;
+pub mod subgraph;
 pub mod template;
 
 use lg_types::{JobSpec, Manifest, WorkflowRef};

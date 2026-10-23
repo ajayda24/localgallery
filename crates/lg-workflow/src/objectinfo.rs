@@ -20,6 +20,9 @@ pub struct InputDef {
     pub tooltip: Option<String>,
     /// Seed-like INT inputs carry an extra "control_after_generate" widget value in UI workflows.
     pub control_after_generate: bool,
+    /// Dynamic combos: option key -> the extra inputs that option adds (as `<name>.<sub>`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sub: Vec<(Value, Vec<InputDef>)>,
 }
 
 impl InputDef {
@@ -100,6 +103,30 @@ fn parse_input(name: &str, spec: &Value, required: bool) -> InputDef {
             .get("control_after_generate")
             .and_then(Value::as_bool)
             .unwrap_or(false),
+        sub: if first.as_str() == Some("COMFY_DYNAMICCOMBO_V3") {
+            opts.get("options")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|o| {
+                    let key = o.get("key")?.clone();
+                    let mut defs = Vec::new();
+                    for (section, req) in [("required", true), ("optional", false)] {
+                        for (n, spec) in o
+                            .pointer(&format!("/inputs/{section}"))
+                            .and_then(Value::as_object)
+                            .into_iter()
+                            .flatten()
+                        {
+                            defs.push(parse_input(n, spec, req));
+                        }
+                    }
+                    Some((key, defs))
+                })
+                .collect()
+        } else {
+            vec![]
+        },
     }
 }
 

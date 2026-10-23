@@ -51,6 +51,33 @@ pub fn substitute(v: &mut Value, scope: &Scope) -> Result<(), BindError> {
     Ok(())
 }
 
+/// Make literal `{{`/`}}` in every string of `v` survive substitution.
+pub fn escape(v: &mut Value) {
+    match v {
+        Value::String(s) if s.contains("{{") || s.contains("}}") => {
+            let mut out = String::with_capacity(s.len() + 16);
+            let mut rest = s.as_str();
+            while !rest.is_empty() {
+                if let Some(r) = rest.strip_prefix("{{") {
+                    out.push_str("{{lbrace}}");
+                    rest = r;
+                } else if let Some(r) = rest.strip_prefix("}}") {
+                    out.push_str("{{rbrace}}");
+                    rest = r;
+                } else {
+                    let ch = rest.chars().next().unwrap();
+                    out.push(ch);
+                    rest = &rest[ch.len_utf8()..];
+                }
+            }
+            *s = out;
+        }
+        Value::Array(a) => a.iter_mut().for_each(escape),
+        Value::Object(o) => o.values_mut().for_each(escape),
+        _ => {}
+    }
+}
+
 fn whole_placeholder(s: &str) -> Option<&str> {
     let t = s.strip_prefix("{{")?.strip_suffix("}}")?;
     (!t.contains("{{") && !t.contains("}}")).then_some(t.trim())
@@ -112,6 +139,9 @@ fn lookup(path: &str, scope: &Scope) -> Result<Value, BindError> {
             .item
             .cloned()
             .ok_or_else(|| BindError::Template("item used outside a fragment".into()))?,
+        // Escapes for literal braces in user text (see `escape`).
+        "lbrace" => return Ok(json!("{{")),
+        "rbrace" => return Ok(json!("}}")),
         "index" => json!(
             scope
                 .index
@@ -197,7 +227,15 @@ fn apply_filter(
         }
         "asset" => map_assets(v, scope)?,
         "bbox_state" => {
-            let size = lookup(need_arg()?.trim(), scope)?;
+            // The canvas size: a size input id, or a literal like `1024x768`.
+            let a = need_arg()?.trim();
+            let size = match a
+                .split_once('x')
+                .and_then(|(w, h)| Some((w.parse::<f64>().ok()?, h.parse::<f64>().ok()?)))
+            {
+                Some((w, h)) => json!({"w": w, "h": h}),
+                None => lookup(a, scope)?,
+            };
             bbox_editor_state(&v, &size)?
         }
         "elements" => layout_elements(&v),
@@ -336,6 +374,10 @@ mod tests {
         );
         assert_eq!(eval("img|asset", &scope).unwrap(), json!("lg_asset1.png"));
         assert_eq!(eval("steps|add:0.6|int", &scope).unwrap(), json!(21));
+        assert_eq!(
+            eval("regions|bbox_state:2000x1000", &scope).unwrap()[0]["x"],
+            json!(200)
+        );
         let state = eval("regions|bbox_state:size", &scope).unwrap();
         assert_eq!(state[0]["x"], json!(100));
         assert_eq!(state[0]["height"], json!(200));
@@ -344,6 +386,15 @@ mod tests {
         assert_eq!(el[0]["bbox"], json!([200, 100, 600, 600]));
         assert!(eval("nope", &scope).is_err());
         assert!(eval("prompt|bogus", &scope).is_err());
+    }
+
+    #[test]
+    fn escaped_braces_roundtrip() {
+        let original = json!({"a": "keep {{this}} and }} literal", "b": "{{x}}"});
+        let mut t = original.clone();
+        escape(&mut t);
+        substitute(&mut t, &Scope::default()).unwrap();
+        assert_eq!(t, original);
     }
 
     #[test]
