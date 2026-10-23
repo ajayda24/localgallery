@@ -6,7 +6,6 @@ use lg_manifests::{Registry, Source};
 use lg_types::{InputKind, Origin};
 use lg_workflow::objectinfo::{Issue, validate};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
 use std::path::Path;
 
 pub fn registry() -> Registry {
