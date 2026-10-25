@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The UI talks to the core over HTTP, so the window gets no Tauri commands.",
+  "windows": ["main"],
+  "permissions": []
+}

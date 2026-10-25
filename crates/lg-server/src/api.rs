@@ -47,6 +47,7 @@ impl From<anyhow::Error> for ApiError {
 
 type R<T = Json<Value>> = Result<T, ApiError>;
 
+#[derive(Default)]
 pub struct ServeOptions {
     /// Accept any Host header (development behind a proxy).
     pub any_host: bool,
@@ -730,7 +731,7 @@ async fn remove_download(State(app): State<S>, AxPath(id): AxPath<String>) -> Js
 async fn engine(State(app): State<S>) -> Json<Value> {
     let (state, detail) = app.engine.status();
     Json(
-        json!({"state": state, "detail": detail, "flags": app.engine.running_flags(), "installed": app.engine.layout().is_installed()}),
+        json!({"state": state, "detail": detail, "flags": app.engine.running_flags(), "installed": app.engine.layout().is_installed(), "url": app.engine.client().map(|c| c.base().to_string())}),
     )
 }
 
@@ -760,10 +761,15 @@ async fn cancel_install(State(app): State<S>) -> Json<Value> {
 }
 
 async fn start_engine(State(app): State<S>) -> R {
-    let flags = vec![
-        "--reserve-vram".to_string(),
-        format!("{:.1}", app.settings.read().planner.vram_headroom_gb),
-    ];
+    // Same rule as the planner: without an NVIDIA GPU, ComfyUI must be told to use the CPU.
+    let flags = if app.hw.read().gpus.is_empty() {
+        vec!["--cpu".to_string()]
+    } else {
+        vec![
+            "--reserve-vram".to_string(),
+            format!("{:.1}", app.settings.read().planner.vram_headroom_gb),
+        ]
+    };
     app.ensure_engine(&flags).await.map_err(bad)?;
     Ok(Json(json!({"ok": true})))
 }
