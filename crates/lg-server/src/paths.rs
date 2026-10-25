@@ -16,7 +16,7 @@ pub struct Paths {
 
 impl Paths {
     pub fn new(root: &Path) -> Self {
-        let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+        let root = lg_types::canonical(root);
         Self {
             data: root.join("data"),
             models: root.join("models"),

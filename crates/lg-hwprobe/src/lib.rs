@@ -122,12 +122,18 @@ pub fn parse_cuda_version(banner: &str) -> Option<String> {
 
 fn disk(path: &Path) -> Option<DiskInfo> {
     let disks = sysinfo::Disks::new_with_refreshed_list();
-    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    // The disk whose mount point is the longest prefix of the app folder.
+    let path = lg_types::canonical(path);
+    // The disk whose mount point is the longest prefix of the app folder (drive letters are
+    // compared without case on Windows).
+    let norm = |p: &Path| {
+        let s = p.to_string_lossy().into_owned();
+        if cfg!(windows) { s.to_lowercase() } else { s }
+    };
+    let target = norm(&path);
     let d = disks
         .list()
         .iter()
-        .filter(|d| path.starts_with(d.mount_point()))
+        .filter(|d| target.starts_with(&norm(d.mount_point())))
         .max_by_key(|d| d.mount_point().as_os_str().len())?;
     Some(DiskInfo {
         path: d.mount_point().display().to_string(),

@@ -90,10 +90,13 @@ test("studio: draw regional boxes on the canvas and run them", async ({ page, re
   await page.locator("[data-region-prompt='0']").fill("a red boat");
   await shot(page, "05-studio-regions");
   await page.getByTestId("create").click();
-  await expect(page.getByTestId("progress")).toBeHidden({ timeout: 30_000 });
-  // The box reached the engine graph.
-  const jobs = await (await request.get("/api/jobs", { headers: { authorization: "Bearer e2e" } })).json();
-  const job = jobs.find((j: any) => j.spec.model === "sd-checkpoint" && j.status === "done");
+  // The box reached the job (wait for the job itself: the progress bar may not have appeared yet).
+  const regionJob = async () => {
+    const jobs = await (await request.get("/api/jobs", { headers: { authorization: "Bearer e2e" } })).json();
+    return jobs.find((j: any) => j.spec.model === "sd-checkpoint" && j.status === "done" && j.spec.values.regions?.length);
+  };
+  await expect.poll(regionJob, { timeout: 30_000 }).toBeTruthy();
+  const job = await regionJob();
   expect(job.spec.values.regions[0].prompt).toBe("a red boat");
   expect(job.spec.values.regions[0].x).toBeGreaterThan(0.05);
 });
@@ -116,9 +119,8 @@ test("studio: inpaint with an uploaded image and a painted mask", async ({ page 
   await expect(page.getByText("Needs:")).toBeHidden({ timeout: 5000 });
   await shot(page, "06-studio-inpaint");
   await page.getByTestId("create").click();
-  await expect(page.getByTestId("progress")).toBeHidden({ timeout: 30_000 });
   await page.getByRole("tab", { name: "Results" }).click();
-  await expect(page.getByTestId("result").locator("img")).toBeVisible();
+  await expect(page.getByTestId("result").locator("img")).toBeVisible({ timeout: 30_000 });
 });
 
 test("ultra settings explain the memory plan", async ({ page }) => {
