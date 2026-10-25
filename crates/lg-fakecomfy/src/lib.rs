@@ -503,6 +503,9 @@ async fn worker(s: S) {
                 ("error", Map::new(), json!([["execution_error", m]]))
             }
         };
+        // Like ComfyUI: `execution_success` goes out before the history is stored, and
+        // `executing: null` after it. The gap makes clients that read history too early fail.
+        tokio::time::sleep(Duration::from_millis(30)).await;
         s.history.lock().insert(
             job.id.clone(),
             json!({

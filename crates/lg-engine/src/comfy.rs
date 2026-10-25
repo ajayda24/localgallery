@@ -222,6 +222,24 @@ impl ComfyClient {
         Ok(v.get(prompt_id).cloned())
     }
 
+    /// The prompt's history, polling for up to `wait` while it is not stored yet.
+    async fn history_soon(
+        &self,
+        prompt_id: &str,
+        wait: Duration,
+    ) -> Result<Option<Value>, EngineError> {
+        let deadline = tokio::time::Instant::now() + wait;
+        loop {
+            if let Some(h) = self.history(prompt_id).await? {
+                return Ok(Some(h));
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Ok(None);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
     /// Queue a graph. Validation failures come back as `EngineError::Rejected`.
     pub async fn queue_prompt(
         &self,
@@ -434,11 +452,15 @@ impl ComfyClient {
                         bytes,
                     });
                 }
+                // ComfyUI sends `execution_success` before it stores the history, and the final
+                // `executing: null` after, so a fast (e.g. fully cached) run can get here first.
                 WsMsg::Success { prompt_id: p } if p == prompt_id => {
-                    let h = self.history(&prompt_id).await?.ok_or_else(|| {
-                        EngineError::Failed("engine finished but returned no history".into())
-                    })?;
-                    return finish_from_history(&h, false);
+                    if let Some(h) = self
+                        .history_soon(&prompt_id, Duration::from_millis(500))
+                        .await?
+                    {
+                        return finish_from_history(&h, false);
+                    }
                 }
                 WsMsg::Error {
                     prompt_id: p,
@@ -459,10 +481,14 @@ impl ComfyClient {
                     prompt_id: Some(p),
                     node: None,
                 } if p == prompt_id => {
-                    // Older servers signal completion this way.
-                    if let Some(h) = self.history(&prompt_id).await? {
-                        return finish_from_history(&h, cancelled);
-                    }
+                    // Sent after the history is stored (and the only signal from older servers).
+                    let h = self
+                        .history_soon(&prompt_id, Duration::from_secs(5))
+                        .await?
+                        .ok_or_else(|| {
+                            EngineError::Failed("engine finished but returned no history".into())
+                        })?;
+                    return finish_from_history(&h, cancelled);
                 }
                 _ => {}
             }
