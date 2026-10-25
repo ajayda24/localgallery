@@ -54,7 +54,8 @@ pub async fn probe(disk_path: &Path) -> HardwareInfo {
         ram_total_gb: sys.total_memory() as f64 / GB,
         ram_free_gb: sys.available_memory() as f64 / GB,
         gpus: nvidia_gpus().await,
-        npu: npu().await,
+        // Filled in later by `probe_npu` (a PowerShell query that takes seconds on Windows).
+        npu: "unknown".into(),
         disk: disk(disk_path),
         laptop: laptop(),
     };
@@ -168,7 +169,8 @@ fn laptop() -> Option<bool> {
 }
 
 /// NPUs show up on Windows as "ComputeAccelerator" devices (Intel AI Boost, AMD NPU, Qualcomm Hexagon).
-async fn npu() -> String {
+/// NPU name, "none", or "unknown". Slow on Windows, so callers run it off the startup path.
+pub async fn probe_npu() -> String {
     #[cfg(windows)]
     {
         let script = "Get-PnpDevice -Class ComputeAccelerator -PresentOnly -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FriendlyName";
@@ -220,6 +222,7 @@ pub struct Monitor {
     peaks: Arc<Mutex<Peaks>>,
     last: Arc<Mutex<Sample>>,
     task: tokio::task::JoinHandle<()>,
+    shared_task: tokio::task::JoinHandle<()>,
 }
 
 impl Monitor {
@@ -227,6 +230,17 @@ impl Monitor {
         let peaks = Arc::new(Mutex::new(Peaks::default()));
         let last = Arc::new(Mutex::new(Sample::default()));
         let (p, l) = (peaks.clone(), last.clone());
+        // Shared GPU memory comes from Windows perf counters (typeperf), which take seconds to
+        // answer, so it is read on its own task and never delays the 500 ms samples.
+        let shared = Arc::new(Mutex::new(None::<f64>));
+        let sh = shared.clone();
+        let shared_task = tokio::spawn(async move {
+            loop {
+                let v = shared_gpu_gb().await;
+                *sh.lock() = v;
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        });
         let task = tokio::spawn(async move {
             let mut sys = sysinfo::System::new();
             // One long-running nvidia-smi, rather than a process per sample.
@@ -246,7 +260,6 @@ impl Monitor {
                 .and_then(|c| c.stdout.take())
                 .map(|o| BufReader::new(o).lines());
             let mut tick = tokio::time::interval(Duration::from_millis(500));
-            let mut n = 0u32;
             loop {
                 tick.tick().await;
                 sys.refresh_memory();
@@ -269,13 +282,7 @@ impl Monitor {
                         s.gpu_util = f.get(2).copied();
                     }
                 }
-                // Shared memory is read through Windows perf counters, every 2 s.
-                if n.is_multiple_of(4) {
-                    s.shared_gpu_gb = shared_gpu_gb().await;
-                } else {
-                    s.shared_gpu_gb = l.lock().shared_gpu_gb;
-                }
-                n += 1;
+                s.shared_gpu_gb = *shared.lock();
                 {
                     let mut pk = p.lock();
                     pk.ram_used_gb = pk.ram_used_gb.max(s.ram_used_gb);
@@ -286,7 +293,12 @@ impl Monitor {
                 *l.lock() = s;
             }
         });
-        Self { peaks, last, task }
+        Self {
+            peaks,
+            last,
+            task,
+            shared_task,
+        }
     }
 
     pub fn peaks(&self) -> Peaks {
@@ -305,6 +317,7 @@ impl Monitor {
 impl Drop for Monitor {
     fn drop(&mut self) {
         self.task.abort();
+        self.shared_task.abort();
     }
 }
 

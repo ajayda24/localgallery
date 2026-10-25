@@ -128,6 +128,11 @@ impl App {
         *app._watcher.lock() = watcher;
         tokio::spawn(crate::jobs::worker(app.clone()));
         tokio::spawn(hardware_ticker(app.clone()));
+        let a = app.clone();
+        tokio::spawn(async move {
+            let npu = lg_hwprobe::probe_npu().await;
+            a.hw.write().npu = npu;
+        });
         Ok(app)
     }
 
