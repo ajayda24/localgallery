@@ -29,6 +29,16 @@ pub fn sample(
                 {"x": 0.05, "y": 0.1, "w": 0.4, "h": 0.5, "prompt": "a red boat", "weight": 1.0},
                 {"x": 0.55, "y": 0.6, "w": 0.4, "h": 0.2, "prompt": "sign", "type": "text", "text": "OPEN"}]),
             InputKind::LoraStack => json!([{"file": "style.safetensors", "strength": 0.8}]),
+            InputKind::ModelFile => match &i.default {
+                Some(Value::String(s)) if !s.is_empty() => continue,
+                _ => json!(format!("sample_{}.safetensors", i.id)),
+            },
+            InputKind::StructuredPrompt => json!({
+                "short_description": "a lighthouse on a cliff at dusk",
+                "objects": ["a white lighthouse, center, beam on"],
+                "lighting": {"conditions": "golden hour", "direction": "from the left"},
+                "text_render": ["HARBOR"]
+            }),
             _ => continue,
         };
         values.insert(i.id.clone(), v);

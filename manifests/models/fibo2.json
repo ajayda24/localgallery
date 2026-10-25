@@ -1,0 +1,337 @@
+{
+  "schema": 1,
+  "id": "fibo2",
+  "display_name": "FIBO 2",
+  "family": "fibo2",
+  "media": "image",
+  "description": "Bria's FIBO 2.0, driven by a structured JSON caption (objects, lighting, camera, text to render) or plain text, with instruction editing. Pick its model files once they are in the models folder.",
+  "tags": [
+    "image",
+    "json prompt",
+    "edit",
+    "text rendering"
+  ],
+  "license": {
+    "name": "See model card",
+    "commercial": false,
+    "url": "https://huggingface.co/briaai"
+  },
+  "files": [
+    {
+      "role": "vae",
+      "folder": "vae",
+      "variants": [
+        {
+          "name": "flux2-vae.safetensors",
+          "precision": "fp32",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors"
+        }
+      ]
+    }
+  ],
+  "memory": {
+    "activation_gb_per_mp": 1.2,
+    "vae_gb_per_mp": 1.5
+  },
+  "ops": {
+    "txt2img": {
+      "workflow": "workflows/fibo2/txt2img.json"
+    },
+    "edit": {
+      "workflow": "workflows/fibo2/edit.json"
+    }
+  },
+  "inputs": [
+    {
+      "id": "caption",
+      "kind": "structured_prompt",
+      "label": "Caption",
+      "required": true,
+      "help": "Fill in what matters; empty fields are left out. Switch to JSON to paste a full FIBO caption.",
+      "default": {
+        "short_description": ""
+      },
+      "schema": {
+        "type": "object",
+        "properties": {
+          "short_description": {
+            "type": "string",
+            "title": "Short description",
+            "description": "One or two sentences about the whole picture."
+          },
+          "objects": {
+            "type": "array",
+            "title": "Objects",
+            "description": "One object per line: what it is, where, how it looks."
+          },
+          "background_setting": {
+            "type": "string",
+            "title": "Background"
+          },
+          "lighting": {
+            "type": "object",
+            "title": "Lighting",
+            "properties": {
+              "conditions": {
+                "type": "string"
+              },
+              "direction": {
+                "type": "string"
+              },
+              "shadows": {
+                "type": "string"
+              }
+            }
+          },
+          "aesthetics": {
+            "type": "object",
+            "title": "Aesthetics",
+            "properties": {
+              "composition": {
+                "type": "string"
+              },
+              "color_scheme": {
+                "type": "string",
+                "title": "color scheme"
+              },
+              "mood_atmosphere": {
+                "type": "string",
+                "title": "mood"
+              }
+            }
+          },
+          "photographic_characteristics": {
+            "type": "object",
+            "title": "Camera",
+            "properties": {
+              "camera_angle": {
+                "type": "string",
+                "title": "camera angle"
+              },
+              "lens_focal_length": {
+                "type": "string",
+                "title": "lens"
+              },
+              "depth_of_field": {
+                "type": "string",
+                "title": "depth of field"
+              },
+              "focus": {
+                "type": "string"
+              }
+            }
+          },
+          "style_medium": {
+            "type": "string",
+            "title": "Medium",
+            "description": "photograph, oil painting, 3D render..."
+          },
+          "artistic_style": {
+            "type": "string",
+            "title": "Artistic style"
+          },
+          "context": {
+            "type": "string",
+            "title": "Context"
+          },
+          "text_render": {
+            "type": "array",
+            "title": "Text in the image",
+            "description": "Exact text to draw, one per line."
+          },
+          "edit_instruction": {
+            "type": "string",
+            "title": "Edit instruction",
+            "description": "Edit only: what to change in the source image."
+          }
+        }
+      }
+    },
+    {
+      "id": "image",
+      "kind": "image",
+      "label": "Source image",
+      "ops": [
+        "edit"
+      ],
+      "required": true
+    },
+    {
+      "id": "diffusion_file",
+      "kind": "model_file",
+      "label": "FIBO 2 model file",
+      "required": true,
+      "help": "The FIBO 2.0 diffusion model, placed in models\\diffusion_models.",
+      "extra": {
+        "folder": "diffusion_models"
+      }
+    },
+    {
+      "id": "text_encoder_file",
+      "kind": "model_file",
+      "label": "Qwen3-VL 4B text encoder",
+      "required": true,
+      "help": "The Qwen3-VL 4B text encoder, placed in models\\text_encoders.",
+      "extra": {
+        "folder": "text_encoders"
+      }
+    },
+    {
+      "id": "size",
+      "kind": "size",
+      "label": "Size",
+      "ops": [
+        "txt2img"
+      ],
+      "default": {
+        "w": 1024,
+        "h": 1024
+      },
+      "options": [
+        {
+          "value": {
+            "w": 1024,
+            "h": 1024
+          },
+          "label": "Square 1:1"
+        },
+        {
+          "value": {
+            "w": 832,
+            "h": 1248
+          },
+          "label": "Portrait 2:3"
+        },
+        {
+          "value": {
+            "w": 768,
+            "h": 1360
+          },
+          "label": "Tall 9:16"
+        },
+        {
+          "value": {
+            "w": 1248,
+            "h": 832
+          },
+          "label": "Landscape 3:2"
+        },
+        {
+          "value": {
+            "w": 1360,
+            "h": 768
+          },
+          "label": "Wide 16:9"
+        }
+      ],
+      "extra": {
+        "multiple_of": 16,
+        "max_pixels": 2359296
+      }
+    },
+    {
+      "id": "negative",
+      "kind": "negative_text",
+      "label": "Avoid",
+      "level": "advanced",
+      "default": ""
+    },
+    {
+      "id": "seed",
+      "kind": "seed",
+      "label": "Seed",
+      "level": "advanced",
+      "default": -1
+    },
+    {
+      "id": "steps",
+      "kind": "int",
+      "label": "Steps",
+      "level": "advanced",
+      "default": 40,
+      "min": 1,
+      "max": 100
+    },
+    {
+      "id": "cfg",
+      "kind": "float",
+      "label": "Prompt strength (CFG)",
+      "level": "advanced",
+      "default": 4.5,
+      "min": 1.0,
+      "max": 12.0,
+      "step": 0.5
+    },
+    {
+      "id": "sampler",
+      "kind": "enum",
+      "label": "Sampler",
+      "level": "advanced",
+      "default": "euler",
+      "options": [
+        "euler",
+        "euler_ancestral",
+        "dpmpp_2m",
+        "res_multistep",
+        "uni_pc"
+      ]
+    },
+    {
+      "id": "scheduler",
+      "kind": "enum",
+      "label": "Scheduler",
+      "level": "advanced",
+      "default": "simple",
+      "options": [
+        "simple",
+        "normal",
+        "beta",
+        "sgm_uniform"
+      ]
+    },
+    {
+      "id": "batch",
+      "kind": "int",
+      "label": "Images per run",
+      "level": "advanced",
+      "ops": [
+        "txt2img"
+      ],
+      "default": 1,
+      "min": 1,
+      "max": 4
+    },
+    {
+      "id": "weight_dtype",
+      "kind": "enum",
+      "label": "Weight format",
+      "level": "ultra",
+      "default": "default",
+      "options": [
+        "default",
+        "fp8_e4m3fn",
+        "fp8_e4m3fn_fast",
+        "fp8_e5m2"
+      ],
+      "help": "fp8 halves the memory the model needs, at a small quality cost."
+    }
+  ],
+  "presets": [
+    {
+      "name": "Draft",
+      "description": "Fast preview",
+      "values": {
+        "steps": 20
+      }
+    },
+    {
+      "name": "Quality",
+      "description": "Slower, more detail",
+      "values": {
+        "steps": 50,
+        "cfg": 5.0
+      }
+    }
+  ]
+}
