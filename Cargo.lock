@@ -1236,10 +1236,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lg-imageops"
-version = "0.1.0"
-
-[[package]]
 name = "lg-manifests"
 version = "0.1.0"
 dependencies = [

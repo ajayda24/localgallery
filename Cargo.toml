@@ -9,7 +9,6 @@ members = [
     "crates/lg-planner",
     "crates/lg-downloader",
     "crates/lg-store",
-    "crates/lg-imageops",
     "crates/lg-engine",
     "crates/lg-fakecomfy",
     "crates/lg-server",
@@ -32,7 +31,6 @@ lg-modelscan = { path = "crates/lg-modelscan" }
 lg-planner = { path = "crates/lg-planner" }
 lg-downloader = { path = "crates/lg-downloader" }
 lg-store = { path = "crates/lg-store" }
-lg-imageops = { path = "crates/lg-imageops" }
 lg-engine = { path = "crates/lg-engine" }
 lg-fakecomfy = { path = "crates/lg-fakecomfy" }
 lg-server = { path = "crates/lg-server" }
