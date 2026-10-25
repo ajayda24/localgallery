@@ -56,3 +56,14 @@ FIBO 2 is supported natively by the pinned ComfyUI (TextEncodeFibo2, the `fibo2`
 
 ## 2026-10-25: Manual "Start engine" passes `--cpu` without an NVIDIA GPU
 The planner already did this for jobs. The manual start button did not, so ComfyUI would fail on a CPU-only PyTorch.
+
+## 2026-10-25: What "portable" means with a WebView2 window
+The Windows CI check diffs `%APPDATA%`, `%LOCALAPPDATA%` and `HKCU\Software` around each phase:
+- **Headless core:** must add nothing at all, and doesn't.
+- **Desktop window:** Microsoft's WebView2 runtime writes its own bookkeeping, even with the user data folder inside the app:
+  - `HKCU\Software\Microsoft\EdgeWebView\*` (version beacon, preference MACs, stability metrics);
+  - its updater's `EdgeUpdate\ClientState` key for the runtime;
+  - Windows' camera/microphone/location consent store entries;
+  - TokenBroker cache files.
+
+These belong to shared Windows components, not to LocalGallery, and every WebView2 app produces them. The check allows exactly these during the window phase. Anything else, or anything naming the app, fails. The README says so rather than claiming zero registry writes.

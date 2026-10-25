@@ -25,6 +25,10 @@ Write-Host "app folder: $root"
 
 # OS bookkeeping that Windows writes for any program that runs; not app state.
 $allowFs = '\\Temp(\\|$)|\\Microsoft\\Windows\\|\\D3DSCache(\\|$)|\\Microsoft\\CLR_|\\NVIDIA|\\CrashDumps(\\|$)|\\pwsh|\\PowerShell|\\npm-cache|\\cargo|\\rustup'
+# Written by the Microsoft WebView2 runtime (a shared Windows component) and by Windows on behalf
+# of any WebView2 window: allowed only during the window phase, never for the headless core.
+$webviewFs = '\\Microsoft\\(TokenBroker|Credentials|EdgeWebView)(\\|$)'
+$webviewReg = '\\Microsoft\\EdgeWebView(\\|\]|$)|\\Microsoft\\EdgeUpdate\\ClientState\\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5\}|\\CapabilityAccessManager\\ConsentStore'
 $allowReg = '\\Microsoft\\Windows\\CurrentVersion\\(Explorer|Search|AppHost|CloudStore|Diagnostics|Notifications|PushNotifications)|\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags|\\Classes\\Local Settings|\\MuiCache|\\Microsoft\\Direct3D|\\Microsoft\\DirectX|\\Microsoft\\Windows\\Shell|\\Microsoft\\PowerShell|\\Microsoft\\Windows\\DWM|\\Microsoft\\Input|\\Microsoft\\IdentityCRL'
 
 function Snapshot-Fs {
@@ -66,6 +70,8 @@ try {
     if (-not (Test-Path $file)) { throw "output not in the app folder: $file" }
     Write-Host "job ok -> $($out.output.path)"
 } finally { Stop-Core $core }
+$fs1 = Snapshot-Fs
+$reg1 = Snapshot-Reg
 
 # 2. Desktop window (and the single-instance hand-over).
 if (-not $NoWindow -and $onWindows) {
@@ -88,18 +94,32 @@ if (-not $NoWindow -and $onWindows) {
     } finally { Remove-Item Env:LG_ENGINE, Env:LG_FAKE_OBJECT_INFO -ErrorAction SilentlyContinue }
 }
 
-# 3. Diff.
-$fs1 = Snapshot-Fs
-$reg1 = Snapshot-Reg
+# 3. Diff, phase by phase: nothing at all from the headless core; only WebView2-runtime and
+# Windows bookkeeping from the window. Anything naming the app fails in either phase.
+function Compare-Phase($fsA, $regA, $fsB, $regB, [string] $extraFs, [string] $extraReg, [string] $phase) {
+    $found = @()
+    foreach ($p in $fsB) {
+        if ($fsA.Contains($p)) { continue }
+        if ($p -match 'localgallery') { $found += "file ($phase): $p" }
+        elseif ($p -match $allowFs) { Write-Host "  (windows) $p" }
+        elseif ($extraFs -and $p -match $extraFs) { Write-Host "  (webview2 runtime) $p" }
+        else { $found += "file ($phase): $p" }
+    }
+    foreach ($k in $regB) {
+        if ($regA.Contains($k)) { continue }
+        $key = ($k -split '\] ', 2)[0]
+        if ($key -match 'localgallery') { $found += "registry ($phase): $k" }
+        elseif ($k -match $allowReg) { Write-Host "  (windows) $k" }
+        elseif ($extraReg -and $k -match $extraReg) { Write-Host "  (webview2 runtime) $k" }
+        else { $found += "registry ($phase): $k" }
+    }
+    , $found
+}
+$fs2 = Snapshot-Fs
+$reg2 = Snapshot-Reg
 $bad = @()
-foreach ($p in $fs1) {
-    if ($fs0.Contains($p)) { continue }
-    if ($p -match $allowFs) { Write-Host "  (os) $p" } else { $bad += "file: $p" }
-}
-foreach ($k in $reg1) {
-    if ($reg0.Contains($k)) { continue }
-    if ($k -match $allowReg) { Write-Host "  (os) $k" } else { $bad += "registry: $k" }
-}
+$bad += Compare-Phase $fs0 $reg0 $fs1 $reg1 '' '' 'core'
+$bad += Compare-Phase $fs1 $reg1 $fs2 $reg2 $webviewFs $webviewReg 'window'
 if ($bad) {
     $bad | ForEach-Object { Write-Host "  NEW $_" -ForegroundColor Red }
     throw "the app wrote $($bad.Count) item(s) outside its folder"

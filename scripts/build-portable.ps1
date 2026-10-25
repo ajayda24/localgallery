@@ -57,7 +57,9 @@ Double-click LocalGallery.exe. Everything the app writes stays in this folder:
   models\    model files (copy your own .safetensors / .gguf files into the subfolders)
   engines\   the image engine (ComfyUI + Python + PyTorch), installed on first run
 
-Nothing is written to the registry or to %APPDATA%. To uninstall, delete this folder.
+LocalGallery writes nothing to the registry or to %APPDATA%. (While the window is open,
+Microsoft's WebView2 runtime keeps a few small keys under HKCU\Software\Microsoft\EdgeWebView,
+as for every app that uses it.) To uninstall, delete this folder.
 
 localgallery-core.exe runs the same app without a window (open the URL it prints).
 
