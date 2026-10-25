@@ -1,0 +1,151 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  COMFY_COMMIT: 9fe7ef764d0452dcc9dcb925efd076d4e68eece1
+
+jobs:
+  linux:
+    name: Linux (core, UI, e2e)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            apps/desktop/src-tauri
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: System packages for the desktop shell
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev
+
+      - name: Pinned ComfyUI checkout (blueprints for the full sweep; no Python needed)
+        run: |
+          git init -q "$RUNNER_TEMP/ComfyUI" && cd "$RUNNER_TEMP/ComfyUI"
+          git fetch -q --depth 1 https://github.com/comfyanonymous/ComfyUI "$COMFY_COMMIT" && git checkout -q FETCH_HEAD
+          echo "LG_COMFY_DIR=$RUNNER_TEMP/ComfyUI" >> "$GITHUB_ENV"
+
+      - name: cargo fmt
+        run: cargo fmt --all --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace --locked
+      - name: Desktop shell (fmt, clippy)
+        working-directory: apps/desktop/src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy --locked -- -D warnings
+
+      - name: UI install
+        working-directory: apps/desktop
+        run: npm ci --no-audit --no-fund
+      - name: UI lint, typecheck, unit tests, build
+        working-directory: apps/desktop
+        run: |
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+      - name: Playwright (real core + fake engine with the real ComfyUI node set)
+        working-directory: apps/desktop
+        run: |
+          cargo build --locked -p lg-server --bin localgallery-core
+          npx playwright install --with-deps chromium
+          npx playwright test
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: playwright-linux
+          path: |
+            apps/desktop/test-results
+            apps/desktop/playwright-report
+          if-no-files-found: ignore
+
+  windows:
+    name: Windows (build, tests, portable zip)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain; if ($LASTEXITCODE) { rustup toolchain install }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            apps/desktop/src-tauri
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: cargo test
+        run: cargo test --workspace --locked
+      - name: Build portable app
+        run: pwsh scripts/build-portable.ps1
+      - name: Portable check (runs from a path with spaces, writes nothing outside its folder)
+        run: pwsh scripts/portable-check.ps1 -App dist/LocalGallery
+      - name: Playwright on Windows (release core)
+        working-directory: apps/desktop
+        env:
+          LG_CORE_EXE: ${{ github.workspace }}\target\release\localgallery-core.exe
+        run: |
+          npx playwright install chromium
+          npx playwright test
+      - uses: actions/upload-artifact@v7
+        with:
+          name: LocalGallery-win64
+          path: |
+            dist/*.zip
+            dist/*.sha256
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: playwright-windows
+          path: |
+            apps/desktop/test-results
+            apps/desktop/playwright-report
+          if-no-files-found: ignore
+
+  windows-engine:
+    name: Windows (real engine install + real ComfyUI tests)
+    needs: windows
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain; if ($LASTEXITCODE) { rustup toolchain install }
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/download-artifact@v8
+        with:
+          name: LocalGallery-win64
+          path: dist
+      - name: Unpack
+        run: Expand-Archive -Path (Get-Item dist/*.zip).FullName -DestinationPath dist
+      - name: Install the engine through the app (CPU PyTorch), start it, run real-engine tests
+        run: pwsh scripts/engine-check.ps1 -App dist/LocalGallery -Profile cpu
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: engine-logs
+          path: ${{ runner.temp }}/**/data/logs/*.log
+          if-no-files-found: ignore
