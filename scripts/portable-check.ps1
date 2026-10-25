@@ -28,7 +28,7 @@ $allowFs = '\\Temp(\\|$)|\\Microsoft\\Windows\\|\\D3DSCache(\\|$)|\\Microsoft\\C
 # Written by the Microsoft WebView2 runtime (a shared Windows component) and by Windows on behalf
 # of any WebView2 window: allowed only during the window phase, never for the headless core.
 $webviewFs = '\\Microsoft\\(TokenBroker|Credentials|EdgeWebView)(\\|$)'
-$webviewReg = '\\Microsoft\\EdgeWebView(\\|\]|$)|\\Microsoft\\EdgeUpdate\\ClientState\\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5\}|\\CapabilityAccessManager\\ConsentStore'
+$webviewReg = '\\Microsoft\\EdgeWebView(\\|\]|$)|\\Microsoft\\EdgeUpdate\\ClientState\\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5\}|\\CapabilityAccessManager(\\ConsentStore)?(\\|\]|$)'
 $allowReg = '\\Microsoft\\Windows\\CurrentVersion\\(Explorer|Search|AppHost|CloudStore|Diagnostics|Notifications|PushNotifications)|\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags|\\Classes\\Local Settings|\\MuiCache|\\Microsoft\\Direct3D|\\Microsoft\\DirectX|\\Microsoft\\Windows\\Shell|\\Microsoft\\PowerShell|\\Microsoft\\Windows\\DWM|\\Microsoft\\Input|\\Microsoft\\IdentityCRL'
 
 function Snapshot-Fs {
