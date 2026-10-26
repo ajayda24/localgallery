@@ -31,7 +31,7 @@ Each milestone ends with its checks passing. Gates on every commit: `cargo fmt`,
 - Playwright suite against the real core and the fake engine: 8/8 tests.
 - The real core on real ComfyUI produced zero changed pixels outside the inpaint mask.
 
-## M8: Portable packaging (done, Windows CI pending its first green run)
+## M8: Portable packaging (done; CI green on Linux and Windows, run 6)
 - **Tauri 2 shell:** the core runs in-process with a single-instance window. The WebView2 profile lives in `data/webview`, with trimmed browser args and suspend-on-minimise.
 - **`scripts/build-portable.ps1`** produces the zip and a sha256.
 - **`portable-check.ps1`:** runs the app from a path with spaces and non-ASCII characters, then diffs `%APPDATA%`, `%LOCALAPPDATA%` and `HKCU\Software`. A negative test (a stray write) makes it fail.

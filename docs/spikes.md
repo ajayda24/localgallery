@@ -38,6 +38,23 @@ These ran against real ComfyUI on CPU, with no model weights available:
   - an mp4 written;
   - inpaint changing zero pixels outside the mask.
 
+## Run for real on Windows (GitHub Actions `windows-latest`, CI run 6)
+- **Portable build:** produces a 28.1 MB folder.
+- **Headless job:** the core ran a full job from `D:\a\_temp\Local Gallery ü test\` and wrote nothing outside the folder.
+- **Desktop window:** WebView2 opened the UI. A second launch handed over to the first window and exited, and the core started exactly once.
+- **Window-phase writes:** only the WebView2 runtime's and Windows' own keys appeared (see decisions).
+- **Playwright on Windows:** 8/8 against the release core.
+- **Managed engine install, through the packaged app:**
+  - uv, Python 3.13, the pinned ComfyUI archive and CPU PyTorch installed into the app folder; ComfyUI started.
+  - Built-in manifests: all 13 operations pass real validation.
+  - Blueprint tools: 113 of 113 runnable ones pass (2 fully accepted, 111 rejected only for missing model files; 3 paid-API tools skipped).
+  - The full-stack test on the real engine passed.
+- **Bugs this found and fixed:**
+  - `\\?\` verbatim paths hid the disk from the planner and leaked into ComfyUI paths.
+  - Monitor samples stalled behind `typeperf`.
+  - Startup waited on a slow PowerShell NPU query.
+  - The client read ComfyUI's history before it was stored.
+
 ## Desktop shell
 
 - Tauri 2.12.5 builds on Linux (webkit2gtk) and Windows (WebView2).
