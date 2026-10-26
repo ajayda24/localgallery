@@ -1,0 +1,12 @@
+/target
+node_modules/
+dist/
+/data/
+/engines/
+/models/
+*.part
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+test-results/
+playwright-report/
+.DS_Store

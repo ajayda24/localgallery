@@ -1,0 +1,17 @@
+[package]
+name = "lg-store"
+description = "SQLite persistence: jobs, gallery, benchmarks, settings, assets."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lg-types.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

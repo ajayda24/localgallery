@@ -1,0 +1,224 @@
+{
+  "schema": 1,
+  "id": "z-image-turbo",
+  "display_name": "Z-Image Turbo",
+  "family": "z-image",
+  "media": "image",
+  "description": "Fast, high quality 6B text-to-image model. 8 steps, strong text rendering.",
+  "tags": [
+    "image",
+    "fast",
+    "lora"
+  ],
+  "license": {
+    "name": "Apache-2.0",
+    "commercial": true
+  },
+  "files": [
+    {
+      "role": "diffusion",
+      "folder": "diffusion_models",
+      "variants": [
+        {
+          "name": "z_image_turbo_bf16.safetensors",
+          "precision": "bf16",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "text_encoder",
+      "folder": "text_encoders",
+      "variants": [
+        {
+          "name": "qwen_3_4b.safetensors",
+          "precision": "bf16",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors"
+        }
+      ]
+    },
+    {
+      "role": "vae",
+      "folder": "vae",
+      "variants": [
+        {
+          "name": "ae.safetensors",
+          "precision": "fp32",
+          "size_gb": 0,
+          "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
+        }
+      ]
+    }
+  ],
+  "memory": {
+    "activation_gb_per_mp": 1.0,
+    "vae_gb_per_mp": 1.5
+  },
+  "ops": {
+    "txt2img": {
+      "workflow": "workflows/zimage/txt2img.json",
+      "expand": [
+        {
+          "input": "loras",
+          "chain": [
+            [
+              "1",
+              0
+            ]
+          ],
+          "head": "lora",
+          "fragment": {
+            "lora": {
+              "class_type": "LoraLoaderModelOnly",
+              "inputs": {
+                "model": "{{prev:0}}",
+                "lora_name": "{{item.file}}",
+                "strength_model": "{{item.strength}}"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "inputs": [
+    {
+      "id": "prompt",
+      "kind": "text",
+      "label": "Prompt",
+      "required": true
+    },
+    {
+      "id": "size",
+      "kind": "size",
+      "label": "Size",
+      "default": {
+        "w": 1024,
+        "h": 1024
+      },
+      "options": [
+        {
+          "value": {
+            "w": 1024,
+            "h": 1024
+          },
+          "label": "Square 1:1"
+        },
+        {
+          "value": {
+            "w": 832,
+            "h": 1216
+          },
+          "label": "Portrait 2:3"
+        },
+        {
+          "value": {
+            "w": 768,
+            "h": 1344
+          },
+          "label": "Tall 9:16"
+        },
+        {
+          "value": {
+            "w": 1216,
+            "h": 832
+          },
+          "label": "Landscape 3:2"
+        },
+        {
+          "value": {
+            "w": 1344,
+            "h": 768
+          },
+          "label": "Wide 16:9"
+        },
+        {
+          "value": {
+            "w": 1536,
+            "h": 1536
+          },
+          "label": "Large square"
+        }
+      ],
+      "extra": {
+        "multiple_of": 16,
+        "max_pixels": 4194304
+      }
+    },
+    {
+      "id": "seed",
+      "kind": "seed",
+      "label": "Seed",
+      "level": "advanced",
+      "default": -1
+    },
+    {
+      "id": "steps",
+      "kind": "int",
+      "label": "Steps",
+      "level": "advanced",
+      "default": 8,
+      "min": 1,
+      "max": 30
+    },
+    {
+      "id": "sampler",
+      "kind": "enum",
+      "label": "Sampler",
+      "level": "ultra",
+      "default": "res_multistep",
+      "options": [
+        "res_multistep",
+        "euler",
+        "dpmpp_2m",
+        "er_sde"
+      ]
+    },
+    {
+      "id": "shift",
+      "kind": "float",
+      "label": "Shift",
+      "help": "Higher favours composition over fine detail.",
+      "level": "ultra",
+      "default": 3.0,
+      "min": 0.5,
+      "max": 10,
+      "step": 0.1
+    },
+    {
+      "id": "batch",
+      "kind": "int",
+      "label": "Images per run",
+      "level": "advanced",
+      "default": 1,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "loras",
+      "kind": "lora_stack",
+      "label": "LoRAs",
+      "level": "advanced",
+      "extra": {
+        "folder": "loras",
+        "max_items": 8
+      }
+    },
+    {
+      "id": "weight_dtype",
+      "kind": "enum",
+      "label": "Weight storage",
+      "help": "fp8 halves the diffusion model's memory. 'fast' also uses fp8 math on GPUs that support it.",
+      "level": "ultra",
+      "default": "default",
+      "options": [
+        "default",
+        "fp8_e4m3fn",
+        "fp8_e4m3fn_fast",
+        "fp8_e5m2"
+      ]
+    }
+  ]
+}

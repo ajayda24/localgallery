@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Inter", sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+  --color-accent-50: #f4f1ff;
+  --color-accent-100: #ebe5ff;
+  --color-accent-300: #b9a8ff;
+  --color-accent-400: #9a82ff;
+  --color-accent-500: #7c5cff;
+  --color-accent-600: #6a45f5;
+  --color-accent-700: #5634d6;
+}
+
+:root {
+  color-scheme: dark;
+  --bg: #0e0f13;
+  --panel: #16181e;
+  --panel-2: #1d2028;
+  --line: #2a2e38;
+  --text: #e8eaf0;
+  --muted: #9aa1b2;
+  --accent-text: #b9a8ff;
+}
+:root.light {
+  color-scheme: light;
+  --bg: #f5f6f9;
+  --panel: #ffffff;
+  --panel-2: #f0f2f6;
+  --line: #dfe3ea;
+  --text: #171a21;
+  --muted: #5d6576;
+  --accent-text: #5634d6;
+}
+
+@layer base {
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.panel-2 { background: var(--panel-2); }
+.line { border-color: var(--line); }
+.muted { color: var(--muted); }
+.checker {
+  background-color: var(--panel-2);
+  background-image: linear-gradient(45deg, rgba(127,127,127,.12) 25%, transparent 25%), linear-gradient(-45deg, rgba(127,127,127,.12) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(127,127,127,.12) 75%), linear-gradient(-45deg, transparent 75%, rgba(127,127,127,.12) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+input, textarea, select {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 10px;
+  outline: none;
+  font: inherit;
+  width: 100%;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--color-accent-500); box-shadow: 0 0 0 3px rgb(124 92 255 / .18); }
+input[type="range"] { padding: 0; border: 0; background: transparent; accent-color: var(--color-accent-500); }
+input[type="checkbox"] { width: auto; accent-color: var(--color-accent-500); }
+textarea { resize: vertical; line-height: 1.45; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+}

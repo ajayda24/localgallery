@@ -1,0 +1,694 @@
+{
+  "schema": 1,
+  "id": "sd-checkpoint",
+  "display_name": "Stable Diffusion (SDXL / SD 1.5 checkpoints)",
+  "family": "sdxl",
+  "media": "image",
+  "description": "Works with any SDXL, Pony, Illustrious or SD 1.5 checkpoint you have. Text to image, image to image, inpainting, outpainting, LoRAs and regional prompts.",
+  "tags": [
+    "image",
+    "classic",
+    "lora",
+    "inpaint",
+    "regions"
+  ],
+  "license": {
+    "name": "CreativeML Open RAIL++-M (SDXL base)",
+    "commercial": true,
+    "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0"
+  },
+  "files": [
+    {
+      "role": "checkpoint",
+      "folder": "checkpoints",
+      "variants": [
+        {
+          "name": "sd_xl_base_1.0.safetensors",
+          "precision": "fp16",
+          "size_gb": 6.94,
+          "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
+        }
+      ]
+    }
+  ],
+  "memory": {
+    "activation_gb_per_mp": 1.3,
+    "vae_gb_per_mp": 1.6
+  },
+  "ops": {
+    "txt2img": {
+      "workflow": "workflows/sd/txt2img.json",
+      "expand": [
+        {
+          "input": "regions",
+          "chain": [
+            [
+              "6",
+              0
+            ]
+          ],
+          "head": "combine",
+          "fragment": {
+            "enc": {
+              "class_type": "CLIPTextEncode",
+              "inputs": {
+                "text": "{{item.prompt}}",
+                "clip": [
+                  "4",
+                  1
+                ]
+              }
+            },
+            "area": {
+              "class_type": "ConditioningSetAreaPercentage",
+              "inputs": {
+                "conditioning": [
+                  "@enc",
+                  0
+                ],
+                "x": "{{item.x}}",
+                "y": "{{item.y}}",
+                "width": "{{item.w}}",
+                "height": "{{item.h}}",
+                "strength": "{{item.weight}}"
+              }
+            },
+            "combine": {
+              "class_type": "ConditioningCombine",
+              "inputs": {
+                "conditioning_1": "{{prev:0}}",
+                "conditioning_2": [
+                  "@area",
+                  0
+                ]
+              }
+            }
+          }
+        },
+        {
+          "input": "loras",
+          "chain": [
+            [
+              "4",
+              0
+            ],
+            [
+              "4",
+              1
+            ]
+          ],
+          "head": "lora",
+          "fragment": {
+            "lora": {
+              "class_type": "LoraLoader",
+              "inputs": {
+                "model": "{{prev:0}}",
+                "clip": "{{prev:1}}",
+                "lora_name": "{{item.file}}",
+                "strength_model": "{{item.strength}}",
+                "strength_clip": "{{item.clip_strength}}"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "img2img": {
+      "workflow": "workflows/sd/img2img.json",
+      "expand": [
+        {
+          "input": "regions",
+          "chain": [
+            [
+              "6",
+              0
+            ]
+          ],
+          "head": "combine",
+          "fragment": {
+            "enc": {
+              "class_type": "CLIPTextEncode",
+              "inputs": {
+                "text": "{{item.prompt}}",
+                "clip": [
+                  "4",
+                  1
+                ]
+              }
+            },
+            "area": {
+              "class_type": "ConditioningSetAreaPercentage",
+              "inputs": {
+                "conditioning": [
+                  "@enc",
+                  0
+                ],
+                "x": "{{item.x}}",
+                "y": "{{item.y}}",
+                "width": "{{item.w}}",
+                "height": "{{item.h}}",
+                "strength": "{{item.weight}}"
+              }
+            },
+            "combine": {
+              "class_type": "ConditioningCombine",
+              "inputs": {
+                "conditioning_1": "{{prev:0}}",
+                "conditioning_2": [
+                  "@area",
+                  0
+                ]
+              }
+            }
+          }
+        },
+        {
+          "input": "loras",
+          "chain": [
+            [
+              "4",
+              0
+            ],
+            [
+              "4",
+              1
+            ]
+          ],
+          "head": "lora",
+          "fragment": {
+            "lora": {
+              "class_type": "LoraLoader",
+              "inputs": {
+                "model": "{{prev:0}}",
+                "clip": "{{prev:1}}",
+                "lora_name": "{{item.file}}",
+                "strength_model": "{{item.strength}}",
+                "strength_clip": "{{item.clip_strength}}"
+              }
+            }
+          }
+        }
+      ],
+      "requires": [
+        "image"
+      ]
+    },
+    "inpaint": {
+      "workflow": "workflows/sd/inpaint.json",
+      "expand": [
+        {
+          "input": "regions",
+          "chain": [
+            [
+              "6",
+              0
+            ]
+          ],
+          "head": "combine",
+          "fragment": {
+            "enc": {
+              "class_type": "CLIPTextEncode",
+              "inputs": {
+                "text": "{{item.prompt}}",
+                "clip": [
+                  "4",
+                  1
+                ]
+              }
+            },
+            "area": {
+              "class_type": "ConditioningSetAreaPercentage",
+              "inputs": {
+                "conditioning": [
+                  "@enc",
+                  0
+                ],
+                "x": "{{item.x}}",
+                "y": "{{item.y}}",
+                "width": "{{item.w}}",
+                "height": "{{item.h}}",
+                "strength": "{{item.weight}}"
+              }
+            },
+            "combine": {
+              "class_type": "ConditioningCombine",
+              "inputs": {
+                "conditioning_1": "{{prev:0}}",
+                "conditioning_2": [
+                  "@area",
+                  0
+                ]
+              }
+            }
+          }
+        },
+        {
+          "input": "loras",
+          "chain": [
+            [
+              "4",
+              0
+            ],
+            [
+              "4",
+              1
+            ]
+          ],
+          "head": "lora",
+          "fragment": {
+            "lora": {
+              "class_type": "LoraLoader",
+              "inputs": {
+                "model": "{{prev:0}}",
+                "clip": "{{prev:1}}",
+                "lora_name": "{{item.file}}",
+                "strength_model": "{{item.strength}}",
+                "strength_clip": "{{item.clip_strength}}"
+              }
+            }
+          }
+        }
+      ],
+      "requires": [
+        "image",
+        "mask"
+      ]
+    },
+    "outpaint": {
+      "workflow": "workflows/sd/outpaint.json",
+      "expand": [
+        {
+          "input": "regions",
+          "chain": [
+            [
+              "6",
+              0
+            ]
+          ],
+          "head": "combine",
+          "fragment": {
+            "enc": {
+              "class_type": "CLIPTextEncode",
+              "inputs": {
+                "text": "{{item.prompt}}",
+                "clip": [
+                  "4",
+                  1
+                ]
+              }
+            },
+            "area": {
+              "class_type": "ConditioningSetAreaPercentage",
+              "inputs": {
+                "conditioning": [
+                  "@enc",
+                  0
+                ],
+                "x": "{{item.x}}",
+                "y": "{{item.y}}",
+                "width": "{{item.w}}",
+                "height": "{{item.h}}",
+                "strength": "{{item.weight}}"
+              }
+            },
+            "combine": {
+              "class_type": "ConditioningCombine",
+              "inputs": {
+                "conditioning_1": "{{prev:0}}",
+                "conditioning_2": [
+                  "@area",
+                  0
+                ]
+              }
+            }
+          }
+        },
+        {
+          "input": "loras",
+          "chain": [
+            [
+              "4",
+              0
+            ],
+            [
+              "4",
+              1
+            ]
+          ],
+          "head": "lora",
+          "fragment": {
+            "lora": {
+              "class_type": "LoraLoader",
+              "inputs": {
+                "model": "{{prev:0}}",
+                "clip": "{{prev:1}}",
+                "lora_name": "{{item.file}}",
+                "strength_model": "{{item.strength}}",
+                "strength_clip": "{{item.clip_strength}}"
+              }
+            }
+          }
+        }
+      ],
+      "requires": [
+        "image"
+      ]
+    }
+  },
+  "inputs": [
+    {
+      "id": "prompt",
+      "kind": "text",
+      "label": "Prompt",
+      "help": "Describe the picture.",
+      "required": true
+    },
+    {
+      "id": "negative",
+      "kind": "negative_text",
+      "label": "Avoid",
+      "level": "advanced",
+      "default": "lowres, blurry, watermark, text, deformed"
+    },
+    {
+      "id": "image",
+      "kind": "image",
+      "label": "Source image",
+      "ops": [
+        "img2img",
+        "inpaint",
+        "outpaint"
+      ]
+    },
+    {
+      "id": "mask",
+      "kind": "mask",
+      "label": "Mask",
+      "help": "Paint the area to change in white.",
+      "ops": [
+        "inpaint"
+      ]
+    },
+    {
+      "id": "size",
+      "kind": "size",
+      "label": "Size",
+      "ops": [
+        "txt2img"
+      ],
+      "default": {
+        "w": 1024,
+        "h": 1024
+      },
+      "options": [
+        {
+          "value": {
+            "w": 1024,
+            "h": 1024
+          },
+          "label": "Square 1:1"
+        },
+        {
+          "value": {
+            "w": 896,
+            "h": 1152
+          },
+          "label": "Portrait 4:5"
+        },
+        {
+          "value": {
+            "w": 832,
+            "h": 1216
+          },
+          "label": "Portrait 2:3"
+        },
+        {
+          "value": {
+            "w": 768,
+            "h": 1344
+          },
+          "label": "Tall 9:16"
+        },
+        {
+          "value": {
+            "w": 1152,
+            "h": 896
+          },
+          "label": "Landscape 5:4"
+        },
+        {
+          "value": {
+            "w": 1216,
+            "h": 832
+          },
+          "label": "Landscape 3:2"
+        },
+        {
+          "value": {
+            "w": 1344,
+            "h": 768
+          },
+          "label": "Wide 16:9"
+        },
+        {
+          "value": {
+            "w": 512,
+            "h": 512
+          },
+          "label": "SD 1.5 square"
+        },
+        {
+          "value": {
+            "w": 512,
+            "h": 768
+          },
+          "label": "SD 1.5 portrait"
+        }
+      ],
+      "extra": {
+        "multiple_of": 8,
+        "max_pixels": 4194304
+      }
+    },
+    {
+      "id": "denoise",
+      "kind": "float",
+      "label": "Change strength",
+      "help": "Low keeps the source, high reimagines it.",
+      "ops": [
+        "img2img",
+        "inpaint"
+      ],
+      "default": 0.6,
+      "min": 0.05,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "id": "seed",
+      "kind": "seed",
+      "label": "Seed",
+      "level": "advanced",
+      "default": -1
+    },
+    {
+      "id": "steps",
+      "kind": "int",
+      "label": "Steps",
+      "level": "advanced",
+      "default": 28,
+      "min": 1,
+      "max": 150
+    },
+    {
+      "id": "cfg",
+      "kind": "float",
+      "label": "Prompt strength (CFG)",
+      "level": "advanced",
+      "default": 6.0,
+      "min": 1.0,
+      "max": 20.0,
+      "step": 0.5
+    },
+    {
+      "id": "sampler",
+      "kind": "enum",
+      "label": "Sampler",
+      "level": "advanced",
+      "default": "dpmpp_2m",
+      "options": [
+        "euler",
+        "euler_ancestral",
+        "dpmpp_2m",
+        "dpmpp_2m_sde",
+        "dpmpp_3m_sde",
+        "dpmpp_sde",
+        "uni_pc",
+        "lcm",
+        "ddim",
+        "res_multistep"
+      ]
+    },
+    {
+      "id": "scheduler",
+      "kind": "enum",
+      "label": "Scheduler",
+      "level": "advanced",
+      "default": "karras",
+      "options": [
+        "karras",
+        "normal",
+        "simple",
+        "sgm_uniform",
+        "exponential",
+        "beta"
+      ]
+    },
+    {
+      "id": "batch",
+      "kind": "int",
+      "label": "Images per run",
+      "level": "advanced",
+      "ops": [
+        "txt2img"
+      ],
+      "default": 1,
+      "min": 1,
+      "max": 8
+    },
+    {
+      "id": "loras",
+      "kind": "lora_stack",
+      "label": "LoRAs",
+      "level": "advanced",
+      "extra": {
+        "folder": "loras",
+        "max_items": 8
+      }
+    },
+    {
+      "id": "regions",
+      "kind": "regions",
+      "label": "Regional prompts",
+      "help": "Draw boxes and give each its own prompt.",
+      "level": "advanced",
+      "extra": {
+        "max_items": 8
+      }
+    },
+    {
+      "id": "grow_mask",
+      "kind": "int",
+      "label": "Grow mask (px)",
+      "level": "ultra",
+      "ops": [
+        "inpaint"
+      ],
+      "default": 8,
+      "min": 0,
+      "max": 64
+    },
+    {
+      "id": "pad_left",
+      "kind": "int",
+      "label": "Extend left",
+      "ops": [
+        "outpaint"
+      ],
+      "default": 0,
+      "min": 0,
+      "max": 2048,
+      "step": 8
+    },
+    {
+      "id": "pad_top",
+      "kind": "int",
+      "label": "Extend top",
+      "ops": [
+        "outpaint"
+      ],
+      "default": 0,
+      "min": 0,
+      "max": 2048,
+      "step": 8
+    },
+    {
+      "id": "pad_right",
+      "kind": "int",
+      "label": "Extend right",
+      "ops": [
+        "outpaint"
+      ],
+      "default": 256,
+      "min": 0,
+      "max": 2048,
+      "step": 8
+    },
+    {
+      "id": "pad_bottom",
+      "kind": "int",
+      "label": "Extend bottom",
+      "ops": [
+        "outpaint"
+      ],
+      "default": 0,
+      "min": 0,
+      "max": 2048,
+      "step": 8
+    },
+    {
+      "id": "feather",
+      "kind": "int",
+      "label": "Edge blend (px)",
+      "level": "ultra",
+      "ops": [
+        "outpaint"
+      ],
+      "default": 40,
+      "min": 0,
+      "max": 256
+    },
+    {
+      "id": "checkpoint",
+      "kind": "model_file",
+      "label": "Checkpoint",
+      "level": "advanced",
+      "default": "sd_xl_base_1.0.safetensors",
+      "extra": {
+        "folder": "checkpoints"
+      }
+    }
+  ],
+  "presets": [
+    {
+      "name": "Draft",
+      "description": "Fast preview",
+      "values": {
+        "steps": 14,
+        "cfg": 5.0,
+        "sampler": "euler_ancestral",
+        "scheduler": "normal"
+      }
+    },
+    {
+      "name": "Quality",
+      "description": "Slower, more detail",
+      "values": {
+        "steps": 36,
+        "cfg": 6.5,
+        "sampler": "dpmpp_2m",
+        "scheduler": "karras"
+      }
+    },
+    {
+      "name": "Lightning / Turbo checkpoint",
+      "description": "For 4-8 step distilled checkpoints",
+      "values": {
+        "steps": 6,
+        "cfg": 1.5,
+        "sampler": "euler",
+        "scheduler": "sgm_uniform"
+      }
+    }
+  ]
+}

@@ -1,0 +1,161 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "{{file.diffusion}}",
+      "weight_dtype": "{{weight_dtype}}"
+    }
+  },
+  "2": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "{{file.diffusion_uncond}}",
+      "weight_dtype": "{{weight_dtype}}"
+    }
+  },
+  "3": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "{{file.text_encoder}}",
+      "type": "ideogram4",
+      "device": "default"
+    }
+  },
+  "4": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "{{file.vae}}"
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "{{prompt}}",
+      "clip": [
+        "3",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": [
+        "5",
+        0
+      ]
+    }
+  },
+  "7": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+      "width": "{{size.w}}",
+      "height": "{{size.h}}",
+      "batch_size": 1
+    }
+  },
+  "8": {
+    "class_type": "CFGOverride",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "cfg": 3,
+      "start_percent": 0.7,
+      "end_percent": 1
+    }
+  },
+  "9": {
+    "class_type": "DualModelGuider",
+    "inputs": {
+      "model": [
+        "8",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "cfg": "{{cfg}}",
+      "model_negative": [
+        "2",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ]
+    }
+  },
+  "10": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "11": {
+    "class_type": "Ideogram4Scheduler",
+    "inputs": {
+      "steps": "{{steps}}",
+      "width": "{{size.w}}",
+      "height": "{{size.h}}",
+      "mu": "{{mu}}",
+      "std": "{{std}}"
+    }
+  },
+  "12": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "{{seed}}"
+    }
+  },
+  "13": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "12",
+        0
+      ],
+      "guider": [
+        "9",
+        0
+      ],
+      "sampler": [
+        "10",
+        0
+      ],
+      "sigmas": [
+        "11",
+        0
+      ],
+      "latent_image": [
+        "7",
+        0
+      ]
+    }
+  },
+  "14": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "13",
+        0
+      ],
+      "vae": [
+        "4",
+        0
+      ]
+    }
+  },
+  "15": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "14",
+        0
+      ],
+      "filename_prefix": "LocalGallery"
+    }
+  }
+}
