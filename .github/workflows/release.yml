@@ -1,0 +1,76 @@
+name: Release
+
+# Publishes the version in Cargo.toml (e.g. 0.1.0) as release v0.1.0: builds the portable
+# Windows zip, checks it, creates the tag on this commit and uploads the zip with the notes in
+# docs/release-notes/v<version>.md. Runs when release notes reach main, or by hand from the
+# Actions tab. A version that is already released is skipped.
+on:
+  push:
+    branches: [main]
+    paths: ["docs/release-notes/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  release:
+    name: Build and publish the Windows portable zip
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain; if ($LASTEXITCODE) { rustup toolchain install }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            apps/desktop/src-tauri
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Version and notes
+        id: version
+        run: |
+          $cargo = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          $tauri = (Get-Content apps/desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($cargo -ne $tauri) { throw "Cargo.toml ($cargo) and tauri.conf.json ($tauri) disagree" }
+          $tag = "v$cargo"
+          $notes = "docs/release-notes/$tag.md"
+          if (-not (Test-Path $notes)) { throw "missing $notes" }
+          git ls-remote --exit-code --tags origin "refs/tags/$tag" | Out-Null
+          $exists = $LASTEXITCODE -eq 0
+          if ($exists) { Write-Host "$tag is already released; nothing to do" }
+          $global:LASTEXITCODE = 0
+          "version=$cargo" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "notes=$notes" >> $env:GITHUB_OUTPUT
+          "exists=$($exists.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+
+      - name: Build portable app
+        if: steps.version.outputs.exists == 'false'
+        run: pwsh scripts/build-portable.ps1
+      - name: Portable check on the exact build being published
+        if: steps.version.outputs.exists == 'false'
+        run: pwsh scripts/portable-check.ps1 -App dist/LocalGallery
+
+      - name: Publish the release (creates the tag on this commit)
+        if: steps.version.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: LocalGallery ${{ steps.version.outputs.version }}
+          body_path: ${{ steps.version.outputs.notes }}
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/LocalGallery-${{ steps.version.outputs.version }}-win64.zip
+            dist/LocalGallery-${{ steps.version.outputs.version }}-win64.zip.sha256
