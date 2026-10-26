@@ -67,3 +67,13 @@ The Windows CI check diffs `%APPDATA%`, `%LOCALAPPDATA%` and `HKCU\Software` aro
   - TokenBroker cache files.
 
 These belong to shared Windows components, not to LocalGallery, and every WebView2 app produces them. The check allows exactly these during the window phase. Anything else, or anything naming the app, fails. The README says so rather than claiming zero registry writes.
+
+## 2026-10-26: The portable check recognises Windows setting up its own Store apps
+The first release build failed the portable check. During the window phase, Windows registered its Windows Security and VCLibs packages for the runner's fresh user profile:
+- package keys and AppContainer SIDs;
+- `AppX…` ProgIds and the `windowsdefender:` protocol;
+- Storage Sense folders.
+
+The headless-core phase on the same runner was clean.
+
+These writes are recognised by identifiers that only packaged apps can produce: Microsoft's package publisher id `8wekyb3d8bbwe`, `S-1-15-2-` AppContainer SIDs, `AppX` ProgIds and `AppData\Local\Packages\Microsoft.*`. LocalGallery is unpackaged and registers no package. Anything naming the app, and anything else unknown, still fails.

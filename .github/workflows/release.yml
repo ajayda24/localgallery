@@ -2,12 +2,12 @@ name: Release
 
 # Publishes the version in Cargo.toml (e.g. 0.1.0) as release v0.1.0: builds the portable
 # Windows zip, checks it, creates the tag on this commit and uploads the zip with the notes in
-# docs/release-notes/v<version>.md. Runs when release notes reach main, or by hand from the
-# Actions tab. A version that is already released is skipped.
+# docs/release-notes/v<version>.md. Runs when release notes, this workflow or the build scripts
+# change on main, or by hand from the Actions tab. A version that is already released is skipped.
 on:
   push:
     branches: [main]
-    paths: ["docs/release-notes/**"]
+    paths: ["docs/release-notes/**", ".github/workflows/release.yml", "scripts/**"]
   workflow_dispatch:
 
 permissions:
