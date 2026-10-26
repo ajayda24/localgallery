@@ -29,7 +29,15 @@ $allowFs = '\\Temp(\\|$)|\\Microsoft\\Windows\\|\\D3DSCache(\\|$)|\\Microsoft\\C
 # of any WebView2 window: allowed only during the window phase, never for the headless core.
 $webviewFs = '\\Microsoft\\(TokenBroker|Credentials|EdgeWebView)(\\|$)'
 $webviewReg = '\\Microsoft\\EdgeWebView(\\|\]|$)|\\Microsoft\\EdgeUpdate\\ClientState\\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5\}|\\CapabilityAccessManager(\\ConsentStore)?(\\|\]|$)'
-$allowReg = '\\Microsoft\\Windows\\CurrentVersion\\(Explorer|Search|AppHost|CloudStore|Diagnostics|Notifications|PushNotifications)|\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags|\\Classes\\Local Settings|\\MuiCache|\\Microsoft\\Direct3D|\\Microsoft\\DirectX|\\Microsoft\\Windows\\Shell|\\Microsoft\\PowerShell|\\Microsoft\\Windows\\DWM|\\Microsoft\\Input|\\Microsoft\\IdentityCRL'
+$allowReg = '\\Microsoft\\Windows\\CurrentVersion\\(Explorer|Search|AppHost|CloudStore|Diagnostics|Notifications|PushNotifications|StorageSense)|\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags|\\Classes\\Local Settings|\\MuiCache|\\Microsoft\\Direct3D|\\Microsoft\\DirectX|\\Microsoft\\Windows\\Shell|\\Microsoft\\PowerShell|\\Microsoft\\Windows\\DWM|\\Microsoft\\Input|\\Microsoft\\IdentityCRL'
+# Windows setting up its own packaged (Store) apps for the user profile, which can happen at any
+# moment on a fresh runner. Recognised by identifiers only packaged apps have: Microsoft's package
+# publisher id, AppContainer SIDs (S-1-15-2-...), AppX ProgIds and the Packages folder. LocalGallery
+# is an unpackaged Win32 app and registers no package, so none of these can come from it.
+$packagedFs = '\\AppData\\Local\\Packages\\Microsoft\.'
+$packagedReg = '_8wekyb3d8bbwe|\\S-1-15-2-|\\Classes\\AppX[0-9a-z]{32}(\\|\]|$)|\\Classes\\\.all(\\|\]|$)|\\Classes\\windowsdefender(\\|\]|$)'
+$allowFs = "$allowFs|$packagedFs"
+$allowReg = "$allowReg|$packagedReg"
 
 function Snapshot-Fs {
     $set = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
