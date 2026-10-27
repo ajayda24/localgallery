@@ -46,7 +46,8 @@ pub fn part_path(dest: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-fn is_hf(url: &str) -> bool {
+/// True for Hugging Face hosts, the only ones the access token is ever sent to.
+pub fn is_hf(url: &str) -> bool {
     reqwest::Url::parse(url)
         .ok()
         .and_then(|u| {

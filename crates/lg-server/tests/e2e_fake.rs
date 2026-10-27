@@ -22,6 +22,7 @@ async fn start(root: &Path, step_ms: u64) -> lg_server::Running {
             manifests: Some(repo().join("manifests")),
             ui: None,
             token: Some(TOKEN.into()),
+            hf_endpoint: Some("off".into()),
         },
         0,
         lg_server::api::ServeOptions {

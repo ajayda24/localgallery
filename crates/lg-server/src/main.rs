@@ -26,6 +26,9 @@ struct Args {
     /// Fixed token (tests). Random per launch otherwise.
     #[arg(long)]
     token: Option<String>,
+    /// Hugging Face endpoint for size lookups and the model browser: a mirror URL, or "off".
+    #[arg(long)]
+    hf_endpoint: Option<String>,
     /// Development only: accept any Host header and skip the token.
     #[arg(long)]
     dev: bool,
@@ -63,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
             manifests: a.manifests,
             ui: a.ui,
             token: a.token,
+            hf_endpoint: a.hf_endpoint,
         },
         a.port,
         lg_server::api::ServeOptions {

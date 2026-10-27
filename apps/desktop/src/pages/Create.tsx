@@ -195,7 +195,9 @@ function ModelPicker({ current }: { current: ModelDetail }) {
 
 export function FitBadge({ m }: { m: ModelSummary }) {
   if (!m.fit) return null;
-  const label = { resident: "fits your GPU", offload: "uses RAM too", stream: "streams from disk", too_big: "too big" }[m.fit.fit];
+  const label = m.fit.sizes_known === false
+    ? "size unknown"
+    : { resident: "fits your GPU", offload: "uses RAM too", stream: "streams from disk", too_big: "too big" }[m.fit.fit];
   return <Badge color={m.fit.badge} title={[...m.fit.explain, ...m.fit.warnings].join("\n")}><Gauge size={11} /> {label}</Badge>;
 }
 
@@ -217,12 +219,13 @@ function PlanCard({ spec, model }: { spec: { model: string; op: string; values: 
     return () => clearTimeout(t);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!plan) return err ? <p className="text-xs muted">{err}</p> : null;
-  const badge = { resident: "green", offload: "yellow", stream: "red", too_big: "red" }[plan.fit] as "green";
+  const unknown = plan.sizes_known === false;
+  const badge = (unknown ? "gray" : { resident: "green", offload: "yellow", stream: "red", too_big: "red" }[plan.fit]) as "green";
   return (
     <div className="rounded-lg panel-2 border line p-2.5 text-xs" data-testid="plan">
       <button className="flex w-full items-center gap-2 cursor-pointer" onClick={() => setOpen(!open)}>
         <Cpu size={14} className="muted" />
-        <Badge color={badge}>{{ resident: "Runs on GPU", offload: "GPU + RAM", stream: "Streams from disk", too_big: "Too big" }[plan.fit]}</Badge>
+        <Badge color={badge}>{unknown ? "Size unknown" : { resident: "Runs on GPU", offload: "GPU + RAM", stream: "Streams from disk", too_big: "Too big" }[plan.fit]}</Badge>
         {plan.precision ? <Badge color="gray">{plan.precision}</Badge> : null}
         {plan.estimated_seconds ? <span className="muted">≈ {formatSeconds(plan.estimated_seconds)}</span> : null}
         <span className="ml-auto muted">{open ? "Hide" : "Why?"}</span>

@@ -21,6 +21,10 @@ pub struct App {
     pub engine: Arc<Engine>,
     pub library: Arc<Library>,
     pub downloads: Arc<Downloads>,
+    /// File sizes learned from the download servers (manifests often leave them unknown).
+    pub sizes: Arc<crate::sizes::RemoteSizes>,
+    /// Hugging Face endpoint, or `None` when online lookups are off.
+    pub hf_endpoint: Option<String>,
     pub events: broadcast::Sender<CoreEvent>,
     pub hw: RwLock<HardwareInfo>,
     pub settings: RwLock<Settings>,
@@ -43,6 +47,9 @@ pub struct Options {
     /// Where the built UI lives (default: `<root>/ui`).
     pub ui: Option<std::path::PathBuf>,
     pub token: Option<String>,
+    /// Hugging Face endpoint for size lookups and the model browser. `None` = huggingface.co,
+    /// `Some("off")` = never go online for these (tests), any other URL = a mirror or mock.
+    pub hf_endpoint: Option<String>,
 }
 
 impl App {
@@ -92,6 +99,11 @@ impl App {
         library.set_roots(roots);
         library.scan();
         let hw = lg_hwprobe::probe(&paths.root).await;
+        let hf_endpoint = match opts.hf_endpoint.as_deref() {
+            Some("off") => None,
+            Some(u) => Some(u.trim_end_matches('/').to_string()),
+            None => Some(crate::sizes::HF.to_string()),
+        };
         let token = opts.token.unwrap_or_else(|| {
             use rand::Rng;
             let mut b = [0u8; 24];
@@ -100,6 +112,10 @@ impl App {
         });
         let app = Arc::new(Self {
             downloads: Downloads::new(events.clone()),
+            sizes: crate::sizes::RemoteSizes::load(
+                paths.data.join("cache").join("file-sizes.json"),
+            ),
+            hf_endpoint,
             paths,
             store,
             registry,
@@ -128,6 +144,7 @@ impl App {
         *app._watcher.lock() = watcher;
         tokio::spawn(crate::jobs::worker(app.clone()));
         tokio::spawn(hardware_ticker(app.clone()));
+        tokio::spawn(size_refresher(app.clone()));
         let a = app.clone();
         tokio::spawn(async move {
             let npu = lg_hwprobe::probe_npu().await;
@@ -250,6 +267,7 @@ pub fn plan_for(
         .precision
         .as_deref()
         .and_then(|p| serde_json::from_value(Value::String(p.into())).ok());
+    let m = &*app.sizes.apply(m);
     lg_planner::plan(&lg_planner::Input {
         hw: &hw,
         manifest: m,
@@ -263,6 +281,33 @@ pub fn plan_for(
         force_vae_tiled: spec.memory.vae_tiled,
         escalate,
     })
+}
+
+/// Learn unknown download sizes at startup and whenever the model list changes (new
+/// manifests, official workflows after an engine start). Offline is fine: they stay unknown.
+async fn size_refresher(app: Arc<App>) {
+    let Some(endpoint) = app.hf_endpoint.clone() else {
+        return;
+    };
+    let mut rx = app.events.subscribe();
+    loop {
+        let urls = crate::sizes::unknown_urls(app.registry.list().into_iter().map(|e| e.manifest));
+        let token = Some(app.settings.read().hf_token.clone()).filter(|t| !t.is_empty());
+        if app.sizes.refresh(urls, token, &endpoint).await > 0 {
+            let _ = app.events.send(CoreEvent::ManifestsChanged);
+        }
+        // Wait for the next change, then let a burst of changes settle.
+        loop {
+            match rx.recv().await {
+                Ok(CoreEvent::ManifestsChanged) => break,
+                Ok(_) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => break,
+                Err(_) => return,
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        while rx.try_recv().is_ok() {}
+    }
 }
 
 /// Live GPU/RAM gauges for the UI, every two seconds.

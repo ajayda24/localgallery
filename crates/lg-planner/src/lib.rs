@@ -200,6 +200,7 @@ pub fn plan(i: &Input) -> Plan {
     let mut downloads = Vec::new();
     let mut main_precision = None;
     let mut unknown_sizes = false;
+    let mut main_unknown = false;
     for f in &needed {
         let comp = component(f);
         let mut variants: Vec<&lg_types::FileVariant> = f.variants.iter().collect();
@@ -227,7 +228,11 @@ pub fn plan(i: &Input) -> Plan {
         let Some(v) = best else { continue };
         let (gb, present) = size_of(v, i.on_disk);
         if gb <= 0.0 {
-            unknown_sizes = true;
+            if comp == Component::Main {
+                main_unknown = true;
+            } else {
+                unknown_sizes = true;
+            }
         }
         if !present {
             downloads.push((v.name.clone(), gb));
@@ -303,7 +308,20 @@ pub fn plan(i: &Input) -> Plan {
         fit = Fit::Stream;
     }
 
+    // Without the model's size the numbers below would be made up ("model 0.0 GB fits").
+    // Plan conservatively (weights may live in RAM) and say what is missing.
+    if main_unknown && measured.is_none() {
+        if fit == Fit::Resident {
+            fit = Fit::Offload;
+        }
+        explain.push(
+            "The model's file size isn't known yet, so whether it fits your GPU can't be estimated. \
+             It is looked up when the app can reach the download server, or read from the file once downloaded."
+                .into(),
+        );
+    }
     match fit {
+        _ if main_unknown && measured.is_none() => {}
         Fit::Resident => explain.push(format!(
             "Fits in your {} ({:.0} GB): model {main_peak:.1} GB + working memory {activation:.1} GB stays on the GPU.",
             short_gpu(&gpu.name),
@@ -455,6 +473,7 @@ pub fn plan(i: &Input) -> Plan {
         downloads,
     )
     .with_weights(weights)
+    .with_sizes_known(!main_unknown || measured.is_some())
 }
 
 fn choose_main<'a>(
@@ -567,15 +586,21 @@ fn finish(
         estimated_seconds,
         explain,
         warnings,
+        sizes_known: true,
     }
 }
 
 trait WithWeights {
     fn with_weights(self, w: f64) -> Self;
+    fn with_sizes_known(self, known: bool) -> Self;
 }
 impl WithWeights for Plan {
     fn with_weights(mut self, w: f64) -> Self {
         self.weights_gb = w;
+        self
+    }
+    fn with_sizes_known(mut self, known: bool) -> Self {
+        self.sizes_known = known;
         self
     }
 }
@@ -655,6 +680,43 @@ mod tests {
             force_vae_tiled: None,
             escalate,
         })
+    }
+
+    #[test]
+    fn unknown_model_size_is_not_a_fit() {
+        // The screenshot case: size_gb 0 used to read as "model 0.0 GB, fits your GPU".
+        let pc = hw(8.0, 32.0, (12, 0));
+        let s = Settings::default();
+        let m = model(
+            &[(
+                "wan2.2_high_noise_14B_fp8_scaled.safetensors",
+                Precision::Fp8,
+                0.0,
+            )],
+            0.0,
+        );
+        let p = run(&pc, &m, 1024.0, 1024.0, &s, &[], 0);
+        assert!(!p.sizes_known, "{p:?}");
+        assert_ne!(
+            p.fit,
+            Fit::Resident,
+            "a model of unknown size is planned as if it may not fit"
+        );
+        assert!(
+            p.explain.iter().any(|e| e.contains("isn't known yet")),
+            "{:?}",
+            p.explain
+        );
+        assert!(
+            !p.explain.iter().any(|e| e.contains("0.0 GB")),
+            "no made-up numbers: {:?}",
+            p.explain
+        );
+        // Once the size is known the normal estimate comes back.
+        let m = model(&[("wan.safetensors", Precision::Fp8, 14.3)], 6.7);
+        let p = run(&pc, &m, 1024.0, 1024.0, &s, &[], 0);
+        assert!(p.sizes_known);
+        assert_eq!(p.fit, Fit::Offload);
     }
 
     #[test]

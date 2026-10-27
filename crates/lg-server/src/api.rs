@@ -255,7 +255,8 @@ fn merge(a: &mut Value, b: &Value) {
 
 /// Manifest with live status: availability, files present, and how it fits this PC.
 fn model_view(app: &App, e: &lg_manifests::Entry, full: bool) -> Value {
-    let m = &e.manifest;
+    let sized = app.sizes.apply(&e.manifest);
+    let m = &*sized;
     let files: Vec<Value> = m
         .files
         .iter()
@@ -307,13 +308,13 @@ fn model_view(app: &App, e: &lg_manifests::Entry, full: bool) -> Value {
         "tags": m.tags, "license": m.license, "origin": m.origin, "ops": m.ops.keys().collect::<Vec<_>>(), "main_op": first_op,
         "problems": e.problems, "unavailable": e.unavailable, "files": files, "installed": installed,
         "size_gb": m.total_size_gb(),
-        "fit": fit.as_ref().map(|p| json!({"fit": p.fit, "badge": p.fit.badge(), "explain": p.explain, "warnings": p.warnings, "precision": p.precision})),
+        "fit": fit.as_ref().map(|p| json!({"fit": p.fit, "badge": if p.sizes_known { p.fit.badge() } else { "gray" }, "sizes_known": p.sizes_known, "explain": p.explain, "warnings": p.warnings, "precision": p.precision})),
     });
     if full {
         v["inputs"] = serde_json::to_value(&m.inputs).unwrap_or_default();
         v["presets"] = serde_json::to_value(&m.presets).unwrap_or_default();
         v["memory"] = serde_json::to_value(&m.memory).unwrap_or_default();
-        v["manifest"] = serde_json::to_value(&**m).unwrap_or_default();
+        v["manifest"] = serde_json::to_value(m).unwrap_or_default();
     }
     v
 }

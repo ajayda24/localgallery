@@ -118,4 +118,12 @@ pub struct Plan {
     /// Plain-language reasons, shown to the user.
     pub explain: Vec<String>,
     pub warnings: Vec<String>,
+    /// False when the main model file's size is not known yet: the fit is then a guess and
+    /// must not be shown as "fits your GPU".
+    #[serde(default = "yes")]
+    pub sizes_known: bool,
+}
+
+fn yes() -> bool {
+    true
 }

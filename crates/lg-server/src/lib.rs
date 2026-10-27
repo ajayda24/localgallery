@@ -6,6 +6,7 @@ pub mod jobs;
 pub mod library;
 pub mod paths;
 pub mod settings;
+pub mod sizes;
 pub mod state;
 
 use std::net::SocketAddr;

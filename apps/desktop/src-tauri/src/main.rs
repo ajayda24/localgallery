@@ -81,6 +81,7 @@ fn main() -> anyhow::Result<()> {
         manifests: std::env::var_os("LG_MANIFESTS").map(PathBuf::from),
         ui: std::env::var_os("LG_UI").map(PathBuf::from),
         token: None,
+        hf_endpoint: std::env::var("LG_HF_ENDPOINT").ok(),
     };
     let webview_data = root.join("data").join("webview");
 

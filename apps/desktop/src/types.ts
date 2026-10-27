@@ -29,7 +29,7 @@ export interface InputSpec {
 
 export interface Preset { name: string; description?: string; values: Record<string, unknown> }
 
-export interface FitInfo { fit: Fit; badge: "green" | "yellow" | "red"; explain: string[]; warnings: string[]; precision?: string | null }
+export interface FitInfo { fit: Fit; badge: "green" | "yellow" | "red" | "gray"; sizes_known?: boolean; explain: string[]; warnings: string[]; precision?: string | null }
 export type Fit = "resident" | "offload" | "stream" | "too_big";
 
 export interface FileView {
@@ -100,7 +100,7 @@ export interface Output {
 }
 
 export interface Plan {
-  fit: Fit; variants: [string, string][]; precision: string | null; launch_flags: string[]; vae_tiled: boolean;
+  fit: Fit; sizes_known?: boolean; variants: [string, string][]; precision: string | null; launch_flags: string[]; vae_tiled: boolean;
   value_overrides: Record<string, unknown>; vram_budget_gb: number; weights_gb: number; downloads: [string, number][];
   estimated_vram_gb: number; estimated_seconds: number | null; explain: string[]; warnings: string[];
 }
