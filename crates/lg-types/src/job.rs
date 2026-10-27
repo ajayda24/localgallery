@@ -46,6 +46,9 @@ pub struct MemoryPrefs {
     /// Force tiled VAE decode on or off.
     #[serde(default)]
     pub vae_tiled: Option<bool>,
+    /// Use this file for a role (file role -> file name), e.g. a local GGUF version.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub files: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

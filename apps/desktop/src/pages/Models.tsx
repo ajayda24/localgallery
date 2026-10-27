@@ -95,6 +95,7 @@ function ModelGrid({ filter, search }: { filter: (m: ModelSummary) => boolean; s
 }
 
 function Files() {
+  const { selectModel, go } = useStore();
   const [files, setFiles] = useState<LibraryFile[]>([]);
   const load = () => api.library().then(setFiles);
   useEffect(() => { load(); }, []);
@@ -106,7 +107,7 @@ function Files() {
       </div>
       {files.length ? (
         <table className="w-full text-sm">
-          <thead className="text-xs muted text-left"><tr><th className="py-1">File</th><th>Folder</th><th>Detected</th><th>Precision</th><th className="text-right">Size</th></tr></thead>
+          <thead className="text-xs muted text-left"><tr><th className="py-1">File</th><th>Folder</th><th>Detected</th><th>Precision</th><th>Used by</th><th className="text-right">Size</th></tr></thead>
           <tbody>
             {files.map((f) => (
               <tr key={`${f.root}/${f.folder}/${f.name}`} className="border-t line">
@@ -114,6 +115,16 @@ function Files() {
                 <td className="muted">{f.folder}</td>
                 <td>{f.info ? `${f.info.kind}${f.info.arch ? ` · ${f.info.arch}` : ""}` : <span className="muted">unknown</span>}</td>
                 <td className="muted">{f.info?.precision ?? ""}</td>
+                <td>
+                  <span className="flex flex-wrap gap-1">
+                    {f.used_by.slice(0, 3).map((u) => (
+                      <button key={u.id} className="cursor-pointer" onClick={async () => { await selectModel(u.id); go("create"); }}>
+                        <Badge color="accent">{u.tool ? "workflow: " : ""}{u.name}</Badge>
+                      </button>
+                    ))}
+                    {f.used_by.length > 3 ? <Badge>+{f.used_by.length - 3} more</Badge> : null}
+                  </span>
+                </td>
                 <td className="text-right tabular-nums muted">{formatBytes(f.size_bytes)}</td>
               </tr>
             ))}

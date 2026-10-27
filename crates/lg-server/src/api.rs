@@ -257,7 +257,7 @@ fn merge(a: &mut Value, b: &Value) {
 
 /// Manifest with live status: availability, files present, and how it fits this PC.
 fn model_view(app: &App, e: &lg_manifests::Entry, full: bool) -> Value {
-    let sized = app.sizes.apply(&e.manifest);
+    let sized = app.effective(&e.manifest);
     let m = &*sized;
     let files: Vec<Value> = m
         .files
@@ -624,7 +624,35 @@ async fn file(State(app): State<S>, AxPath(path): AxPath<String>) -> Response {
 // ---------- library & downloads ----------
 
 async fn library(State(app): State<S>) -> Json<Value> {
-    Json(json!(app.library.files()))
+    let models = app.registry.list();
+    let out: Vec<Value> = app
+        .library
+        .files()
+        .into_iter()
+        .map(|lf| {
+            // Models and tools that list this file, or whose file it can stand in for (a GGUF
+            // or another build of the same architecture).
+            let mut used: Vec<Value> = models
+                .iter()
+                .map(|e| &e.manifest)
+                .filter(|m| {
+                    m.files.iter().any(|f| {
+                        crate::library::same_folder(&f.folder, &lf.folder)
+                            && (f.variants.iter().any(|v| v.name == lf.name)
+                                || lf.info.as_ref().is_some_and(|i| {
+                                    f.accepts(&i.kind, i.arch.as_deref(), &lf.name)
+                                }))
+                    })
+                })
+                .map(|m| json!({"id": m.id, "name": m.display_name, "tool": m.origin != Origin::Builtin}))
+                .collect();
+            used.sort_by_key(|u| (u["tool"].as_bool(), u["name"].as_str().map(str::to_lowercase)));
+            let mut v = json!(lf);
+            v["used_by"] = json!(used);
+            v
+        })
+        .collect();
+    Json(json!(out))
 }
 
 #[derive(Deserialize)]
@@ -873,6 +901,7 @@ async fn install_engine(State(app): State<S>, Json(b): Json<InstallReq>) -> R {
         uv: None,
         comfy_source: None,
         torch_index: None,
+        addon_sources: Default::default(),
     };
     app.engine.install(opts).map_err(bad)?;
     Ok(Json(json!({"ok": true})))

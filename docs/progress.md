@@ -39,7 +39,14 @@ Each milestone ends with its checks passing. Gates on every commit: `cargo fmt`,
 - **`smoke.ps1` and `bench.ps1`** for the owner's PC, shipped in `tools\` inside the zip.
 - **CI:** the Linux, Windows and Windows-engine jobs.
 
+## After 0.1.0: sizes, Hugging Face, GGUF
+- Real file sizes on model cards, from Hugging Face, cached; "size unknown" instead of a false fit.
+- Models › Hugging Face: browse an organisation's repos, see sizes and which models use each file, download into the right folder.
+- GGUF: the ComfyUI-GGUF add-on installs with the engine; local GGUF (and other local) files become variants of matching models; GGUF loaders are swapped in automatically; Ultra can pick a file per role; Files shows "used by".
+- Tests: `hub_mock` (sizes, browsing, downloads against a mock Hub), `gguf_fake` (local GGUF found, chosen, loaded with GGUF nodes), planner, workflow and scanner unit tests, a Playwright test for the Hugging Face tab. Windows CI checks the add-on's nodes in the real engine.
+
 ## Not done
+- Inference from a real GGUF file (no GGUF weights on the build machine).
 - sd.cpp "Lite" engine (deferred; see decisions).
 - NPU use (the owner has not confirmed an NPU).
 - Real GPU results (see `benchmarks.md`).

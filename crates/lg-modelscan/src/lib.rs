@@ -79,7 +79,22 @@ pub fn inspect(path: &Path) -> Result<ModelInfo, ScanError> {
         }
         _ => return Err(ScanError::Format(format!("unsupported extension .{ext}"))),
     };
-    let (kind, arch) = classify(&tensors);
+    let (kind, arch) = {
+        let by_tensors = classify(&tensors);
+        match gguf_arch(&format, &metadata) {
+            // Tensor matching can be more specific ("flux-dev" for "flux"); keep it when it agrees.
+            Some((k, Some(a)))
+                if !(by_tensors.0 == k
+                    && by_tensors
+                        .1
+                        .as_deref()
+                        .is_some_and(|t| t == a || t.starts_with(&format!("{a}-")))) =>
+            {
+                (k, Some(a))
+            }
+            _ => by_tensors,
+        }
+    };
     let precision = quant.or_else(|| dominant_precision(&tensors, &format));
     let parameters = tensors
         .values()
@@ -97,6 +112,72 @@ pub fn inspect(path: &Path) -> Result<ModelInfo, ScanError> {
         parameters,
         metadata,
     })
+}
+
+/// A minimal GGUF file (header, `general.architecture`, tensor infos, no data) for tests in
+/// this and other crates. `tensors` are (name, ggml type id).
+#[doc(hidden)]
+pub fn test_gguf(arch: &str, tensors: &[(&str, u32)]) -> Vec<u8> {
+    let mut b = Vec::new();
+    let s = |b: &mut Vec<u8>, x: &str| {
+        b.extend_from_slice(&(x.len() as u64).to_le_bytes());
+        b.extend_from_slice(x.as_bytes());
+    };
+    b.extend_from_slice(b"GGUF");
+    b.extend_from_slice(&3u32.to_le_bytes());
+    b.extend_from_slice(&(tensors.len() as u64).to_le_bytes());
+    b.extend_from_slice(&1u64.to_le_bytes());
+    s(&mut b, "general.architecture");
+    b.extend_from_slice(&8u32.to_le_bytes());
+    s(&mut b, arch);
+    for (name, ty) in tensors {
+        s(&mut b, name);
+        b.extend_from_slice(&2u32.to_le_bytes());
+        b.extend_from_slice(&64u64.to_le_bytes());
+        b.extend_from_slice(&3072u64.to_le_bytes());
+        b.extend_from_slice(&ty.to_le_bytes());
+        b.extend_from_slice(&0u64.to_le_bytes());
+    }
+    b
+}
+
+/// GGUF files say what they are in `general.architecture` (ComfyUI-GGUF's converter and
+/// llama.cpp both write it). Mapped to the names `classify` uses.
+fn gguf_arch(
+    format: &str,
+    metadata: &BTreeMap<String, String>,
+) -> Option<(String, Option<String>)> {
+    if format != "gguf" {
+        return None;
+    }
+    let a = metadata
+        .get("general.architecture")?
+        .trim()
+        .to_ascii_lowercase();
+    let diffusion = match a.as_str() {
+        "flux" => Some("flux"),
+        "sd1" => Some("sd15"),
+        "sdxl" => Some("sdxl"),
+        "sd3" => Some("sd3"),
+        "aura" => Some("auraflow"),
+        "hidream" => Some("hidream"),
+        "cosmos" => Some("cosmos"),
+        "ltxv" => Some("ltxv"),
+        "hyvid" => Some("hunyuan_video"),
+        "wan" => Some("wan2.1"),
+        "lumina2" => Some("lumina2"),
+        "qwen_image" => Some("qwen_image"),
+        _ => None,
+    };
+    if let Some(d) = diffusion {
+        return Some(("diffusion".into(), Some(d.into())));
+    }
+    let text = match a.as_str() {
+        "t5" | "t5encoder" => "t5",
+        "llama" | "qwen2vl" | "qwen3" | "qwen3vl" | "gemma3" | "qwen2" => a.as_str(),
+        _ => return None,
+    };
+    Some(("text_encoder".into(), Some(text.into())))
 }
 
 fn file_name(p: &Path) -> String {
@@ -820,6 +901,52 @@ mod tests {
         assert_eq!(i.arch.as_deref(), Some("flux-schnell"));
         assert_eq!(i.metadata["general.architecture"], "flux");
         assert_eq!(i.precision, Some(Precision::Q4), "Q4_K dominates");
+    }
+
+    #[test]
+    fn gguf_architecture_comes_from_its_metadata() {
+        let d = tempfile::tempdir().unwrap();
+        let cases = [
+            (
+                "z_image_turbo-Q4_K_M.gguf",
+                "lumina2",
+                "diffusion",
+                "lumina2",
+            ),
+            (
+                "qwen-image-Q5_K_S.gguf",
+                "qwen_image",
+                "diffusion",
+                "qwen_image",
+            ),
+            (
+                "wan2.2_t2v_high_noise_14B_Q4_K_M.gguf",
+                "wan",
+                "diffusion",
+                "wan2.1",
+            ),
+            (
+                "umt5-xxl-encoder-Q8_0.gguf",
+                "t5encoder",
+                "text_encoder",
+                "t5",
+            ),
+            ("Qwen3-4B-Q4_K_M.gguf", "qwen3", "text_encoder", "qwen3"),
+        ];
+        for (name, arch, kind, want) in cases {
+            let p = d.path().join(name);
+            std::fs::write(&p, test_gguf(arch, &[("some.unrecognised.weight", 12)])).unwrap();
+            let i = inspect(&p).unwrap();
+            assert_eq!(
+                (i.kind.as_str(), i.arch.as_deref()),
+                (kind, Some(want)),
+                "{name}"
+            );
+        }
+        // Unknown architectures fall back to tensor matching.
+        let p = d.path().join("odd.gguf");
+        std::fs::write(&p, test_gguf("mystery", &[("x.weight", 12)])).unwrap();
+        assert_eq!(inspect(&p).unwrap().kind, "unknown");
     }
 
     #[test]

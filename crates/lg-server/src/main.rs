@@ -14,9 +14,10 @@ struct Args {
     /// Engine: managed | fake | http://host:port (an existing ComfyUI).
     #[arg(long, default_value = "managed")]
     engine: String,
-    /// For the fake engine: node definitions to serve (a captured /object_info).
+    /// For the fake engine: node definitions to serve (a captured /object_info). Repeat to
+    /// merge several files, e.g. core nodes plus an add-on's.
     #[arg(long)]
-    fake_object_info: Option<PathBuf>,
+    fake_object_info: Vec<PathBuf>,
     #[arg(long, default_value_t = 40)]
     fake_step_ms: u64,
     #[arg(long)]

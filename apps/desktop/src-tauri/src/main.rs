@@ -28,7 +28,10 @@ fn app_root() -> PathBuf {
 fn engine_mode() -> lg_server::Mode {
     match std::env::var("LG_ENGINE").ok().as_deref() {
         Some("fake") => lg_server::Mode::Fake {
-            object_info: std::env::var_os("LG_FAKE_OBJECT_INFO").map(PathBuf::from),
+            // One or more files, separated like PATH.
+            object_info: std::env::var_os("LG_FAKE_OBJECT_INFO")
+                .map(|v| std::env::split_paths(&v).collect())
+                .unwrap_or_default(),
             step_ms: 40,
         },
         Some(url) if url.starts_with("http://") || url.starts_with("https://") => {

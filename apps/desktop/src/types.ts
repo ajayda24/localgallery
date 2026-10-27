@@ -74,7 +74,7 @@ export interface JobSpec {
   op: string;
   values: Record<string, unknown>;
   batch?: number;
-  memory?: { plan?: string | null; precision?: string | null; vae_tiled?: boolean | null };
+  memory?: { plan?: string | null; precision?: string | null; vae_tiled?: boolean | null; files?: Record<string, string> };
   overrides?: Record<string, unknown>;
 }
 
@@ -146,6 +146,8 @@ export interface Download { id: string; name: string; url: string; dest: string;
 export interface LibraryFile {
   folder: string; name: string; root: string; size_bytes: number;
   info: { kind: string; arch: string | null; precision: string | null; format: string; parameters: number } | null;
+  /** Models and workflows that list this file or can use it in place of theirs. */
+  used_by: { id: string; name: string; tool: boolean }[];
 }
 
 export interface Benchmark { model: string; op: string; precision: string | null; plan: string; width: number; height: number; frames: number; steps: number; seconds: number; peak_vram_gb: number | null; peak_ram_gb: number | null; shared_gpu_gb: number | null; created_at: number }

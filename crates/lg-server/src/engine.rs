@@ -22,7 +22,8 @@ pub enum Mode {
     External(String),
     /// The in-process fake engine (development, tests, machines without a GPU).
     Fake {
-        object_info: Option<PathBuf>,
+        /// Node definition files, merged in order. None = the built-in minimal set.
+        object_info: Vec<PathBuf>,
         step_ms: u64,
     },
 }
@@ -39,6 +40,8 @@ pub struct Engine {
     start_lock: tokio::sync::Mutex<()>,
     install_cancel: parking_lot::Mutex<Option<CancellationToken>>,
     extra_dirs: RwLock<Vec<String>>,
+    /// Extensions were checked (and added if missing) this session.
+    addons_checked: std::sync::atomic::AtomicBool,
     /// Bumped on every successful (re)start.
     pub generation: std::sync::atomic::AtomicU64,
 }
@@ -65,6 +68,7 @@ impl Engine {
             start_lock: tokio::sync::Mutex::new(()),
             install_cancel: parking_lot::Mutex::new(None),
             extra_dirs: RwLock::new(vec![]),
+            addons_checked: std::sync::atomic::AtomicBool::new(false),
             generation: std::sync::atomic::AtomicU64::new(0),
         }
     }
@@ -164,14 +168,22 @@ impl Engine {
 
     async fn start_fake(
         &self,
-        object_info: Option<PathBuf>,
+        object_info: Vec<PathBuf>,
         step_ms: u64,
     ) -> Result<ComfyClient, String> {
         let mut cfg = lg_fakecomfy::Config::new(self.paths.engine_data().join("fake"));
         cfg.step_ms = step_ms;
-        if let Some(p) = object_info {
-            let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
-            cfg.object_info = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        if !object_info.is_empty() {
+            let mut all = serde_json::Map::new();
+            for p in &object_info {
+                let text =
+                    std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?;
+                let nodes: serde_json::Map<String, Value> =
+                    serde_json::from_str(&text).map_err(|e| format!("{}: {e}", p.display()))?;
+                // Keys starting with "_" are notes in hand-written fixtures, not nodes.
+                all.extend(nodes.into_iter().filter(|(k, _)| !k.starts_with('_')));
+            }
+            cfg.object_info = Value::Object(all);
         }
         let (addr, _) = lg_fakecomfy::serve(cfg, ([127, 0, 0, 1], 0).into())
             .await
@@ -187,6 +199,7 @@ impl Engine {
                     .into(),
             );
         }
+        self.ensure_addons(&layout).await;
         let ed = self.paths.engine_data();
         let extra = self.write_extra_model_paths()?;
         let mut all_flags = vec![
@@ -268,18 +281,75 @@ impl Engine {
         }
     }
 
-    /// Install the managed engine in the background, reporting progress as events.
-    pub fn install(self: &Arc<Self>, opts: InstallOptions) -> Result<(), String> {
-        if !matches!(self.mode, Mode::Managed) {
-            return Err("this app uses an external engine".into());
-        }
+    fn read_lock(&self) -> Result<lg_engine::install::Lock, String> {
         let lock_path = self.paths.root.join("engines.lock.json");
         let lock_path = if lock_path.exists() {
             lock_path
         } else {
             self.paths.manifests.join("../engines.lock.json")
         };
-        let lock = lg_engine::install::read_lock(&lock_path)?;
+        lg_engine::install::read_lock(&lock_path)
+    }
+
+    /// Engines installed by an older app version may lack an extension the lock now lists
+    /// (e.g. GGUF support). Add it before starting; on failure (offline...) start without it
+    /// and say so in the log. Checked once per session.
+    async fn ensure_addons(&self, layout: &Layout) {
+        if self
+            .addons_checked
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return;
+        }
+        let log = |line: String| {
+            let _ = self.events.send(CoreEvent::Log {
+                source: "install".into(),
+                line,
+            });
+        };
+        let Ok(lock) = self.read_lock() else { return };
+        let opts = InstallOptions {
+            torch_profile: String::new(),
+            uv: None,
+            comfy_source: None,
+            torch_index: None,
+            addon_sources: Default::default(),
+        };
+        let steps = match lg_engine::install::addons_plan(&lock, layout, &opts) {
+            Ok(s) if s.is_empty() => return,
+            Ok(s) => s,
+            Err(e) => {
+                log(format!("Engine extensions not updated: {e}"));
+                return;
+            }
+        };
+        self.set_state(EngineState::Installing, "Adding GGUF support...");
+        let events = self.events.clone();
+        let progress = move |p: lg_engine::install::InstallProgress| {
+            if let Some(line) = &p.line {
+                let _ = events.send(CoreEvent::Log {
+                    source: "install".into(),
+                    line: strip_ansi(line),
+                });
+            }
+        };
+        if let Err(e) =
+            lg_engine::install::run(&steps, layout, false, &CancellationToken::new(), &progress)
+                .await
+        {
+            log(format!(
+                "Could not add engine extensions ({e}). The engine starts without them; GGUF model files will not load until this works."
+            ));
+        }
+        self.set_state(EngineState::Starting, "Starting...");
+    }
+
+    /// Install the managed engine in the background, reporting progress as events.
+    pub fn install(self: &Arc<Self>, opts: InstallOptions) -> Result<(), String> {
+        if !matches!(self.mode, Mode::Managed) {
+            return Err("this app uses an external engine".into());
+        }
+        let lock = self.read_lock()?;
         let layout = self.layout();
         let steps = lg_engine::install::plan(&lock, &layout, &opts)?;
         let cancel = CancellationToken::new();

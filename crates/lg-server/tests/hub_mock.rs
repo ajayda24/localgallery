@@ -142,7 +142,10 @@ async fn hugging_face_browser_and_sizes() {
         lg_server::Options {
             root: tmp.path().join("Local Gallery ü"),
             mode: lg_server::Mode::Fake {
-                object_info: Some(repo().join("tests/fixtures/object_info.json")),
+                object_info: vec![
+                    repo().join("tests/fixtures/object_info.json"),
+                    repo().join("tests/fixtures/object_info.gguf.json"),
+                ],
                 step_ms: 5,
             },
             manifests: Some(repo().join("manifests")),

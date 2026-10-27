@@ -37,7 +37,7 @@ export default defineConfig({
       env: { ...process.env, MOCK_HUB_PORT: String(HUB_PORT) } as Record<string, string>,
     },
     {
-      command: `"${exe}" --root "${root}" --engine fake --fake-object-info "${join(repo, "tests/fixtures/object_info.json")}" --fake-step-ms 30 --manifests "${join(repo, "manifests")}" --ui "${join(here, "dist")}" --port ${PORT} --token e2e --hf-endpoint http://127.0.0.1:${HUB_PORT}`,
+      command: `"${exe}" --root "${root}" --engine fake --fake-object-info "${join(repo, "tests/fixtures/object_info.json")}" --fake-object-info "${join(repo, "tests/fixtures/object_info.gguf.json")}" --fake-step-ms 30 --manifests "${join(repo, "manifests")}" --ui "${join(here, "dist")}" --port ${PORT} --token e2e --hf-endpoint http://127.0.0.1:${HUB_PORT}`,
       url: `http://127.0.0.1:${PORT}/api/health`,
       reuseExistingServer: false,
       timeout: 60_000,

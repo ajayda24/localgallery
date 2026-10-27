@@ -1,0 +1,231 @@
+{
+ "_comment": "Not captured: written from ComfyUI-GGUF nodes.py at commit 6ea2651e7df66d7585f6ffee804b20e92fb38b8a (the commit engines.lock.json pins). The type lists are the core CLIPLoader/DualCLIPLoader ones, which the add-on reuses. File lists are empty as in the captured fixture. Windows CI checks the real engine has these nodes.",
+ "UnetLoaderGGUF": {
+  "input": {
+   "required": {
+    "unet_name": [
+     []
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "unet_name"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "MODEL"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "MODEL"
+  ],
+  "name": "UnetLoaderGGUF",
+  "display_name": "Unet Loader (GGUF)",
+  "description": "",
+  "python_module": "custom_nodes.ComfyUI-GGUF",
+  "category": "bootleg",
+  "output_node": false
+ },
+ "CLIPLoaderGGUF": {
+  "input": {
+   "required": {
+    "clip_name": [
+     []
+    ],
+    "type": [
+     [
+      "stable_diffusion",
+      "stable_cascade",
+      "sd3",
+      "stable_audio",
+      "mochi",
+      "ltxv",
+      "pixart",
+      "cosmos",
+      "lumina2",
+      "wan",
+      "hidream",
+      "chroma",
+      "ace",
+      "omnigen2",
+      "qwen_image",
+      "hunyuan_image",
+      "flux2",
+      "ovis",
+      "longcat_image",
+      "cogvideox",
+      "lens",
+      "pixeldit",
+      "ideogram4",
+      "boogu",
+      "krea2",
+      "joyimage",
+      "mage",
+      "minimax",
+      "yue2",
+      "flux3",
+      "moss_image",
+      "fibo2"
+     ]
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "clip_name",
+    "type"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "CLIP"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "CLIP"
+  ],
+  "name": "CLIPLoaderGGUF",
+  "display_name": "CLIPLoader (GGUF)",
+  "description": "",
+  "python_module": "custom_nodes.ComfyUI-GGUF",
+  "category": "bootleg",
+  "output_node": false
+ },
+ "DualCLIPLoaderGGUF": {
+  "input": {
+   "required": {
+    "clip_name1": [
+     []
+    ],
+    "clip_name2": [
+     []
+    ],
+    "type": [
+     [
+      "sdxl",
+      "sd3",
+      "flux",
+      "hunyuan_video",
+      "hidream",
+      "hunyuan_image",
+      "hunyuan_video_15",
+      "kandinsky5",
+      "kandinsky5_image",
+      "ltxv",
+      "newbie",
+      "ace"
+     ]
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "clip_name1",
+    "clip_name2",
+    "type"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "CLIP"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "CLIP"
+  ],
+  "name": "DualCLIPLoaderGGUF",
+  "display_name": "DualCLIPLoader (GGUF)",
+  "description": "",
+  "python_module": "custom_nodes.ComfyUI-GGUF",
+  "category": "bootleg",
+  "output_node": false
+ },
+ "TripleCLIPLoaderGGUF": {
+  "input": {
+   "required": {
+    "clip_name1": [
+     []
+    ],
+    "clip_name2": [
+     []
+    ],
+    "clip_name3": [
+     []
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "clip_name1",
+    "clip_name2",
+    "clip_name3"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "CLIP"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "CLIP"
+  ],
+  "name": "TripleCLIPLoaderGGUF",
+  "display_name": "TripleCLIPLoader (GGUF)",
+  "description": "",
+  "python_module": "custom_nodes.ComfyUI-GGUF",
+  "category": "bootleg",
+  "output_node": false
+ },
+ "QuadrupleCLIPLoaderGGUF": {
+  "input": {
+   "required": {
+    "clip_name1": [
+     []
+    ],
+    "clip_name2": [
+     []
+    ],
+    "clip_name3": [
+     []
+    ],
+    "clip_name4": [
+     []
+    ]
+   }
+  },
+  "input_order": {
+   "required": [
+    "clip_name1",
+    "clip_name2",
+    "clip_name3",
+    "clip_name4"
+   ]
+  },
+  "is_input_list": false,
+  "output": [
+   "CLIP"
+  ],
+  "output_is_list": [
+   false
+  ],
+  "output_name": [
+   "CLIP"
+  ],
+  "name": "QuadrupleCLIPLoaderGGUF",
+  "display_name": "QuadrupleCLIPLoader (GGUF)",
+  "description": "",
+  "python_module": "custom_nodes.ComfyUI-GGUF",
+  "category": "bootleg",
+  "output_node": false
+ }
+}

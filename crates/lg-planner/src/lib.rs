@@ -62,6 +62,8 @@ pub struct Input<'a> {
     pub force_fit: Option<Fit>,
     pub force_precision: Option<Precision>,
     pub force_vae_tiled: Option<bool>,
+    /// File chosen by the user per role (must be one of that role's variants).
+    pub force_files: &'a BTreeMap<String, String>,
     /// Retry level after an out-of-memory error (0 = first try).
     pub escalate: u8,
 }
@@ -153,7 +155,8 @@ pub fn plan(i: &Input) -> Plan {
             let v = f
                 .variants
                 .iter()
-                .find(|v| i.on_disk.contains_key(&v.name))
+                .find(|v| i.force_files.get(&f.role) == Some(&v.name))
+                .or_else(|| f.variants.iter().find(|v| i.on_disk.contains_key(&v.name)))
                 .or_else(|| {
                     f.variants
                         .iter()
@@ -212,7 +215,12 @@ pub fn plan(i: &Input) -> Plan {
         {
             variants.retain(|v| v.precision == p);
         }
+        let forced = i
+            .force_files
+            .get(&f.role)
+            .and_then(|n| variants.iter().copied().find(|v| &v.name == n));
         let best = match comp {
+            _ if forced.is_some() => forced,
             Component::Main => choose_main(
                 &variants,
                 i.on_disk,
@@ -493,6 +501,14 @@ fn choose_main<'a>(
     let gb = |v: &lg_types::FileVariant| size_of(v, on_disk).0;
     let present = |v: &lg_types::FileVariant| on_disk.contains_key(&v.name);
     let mut vs: Vec<&lg_types::FileVariant> = variants.to_vec();
+    // Use what is already on disk (a download you made, your own GGUF) before downloading
+    // another variant; the policy then picks among those. A file can still be forced per job.
+    if vs.iter().any(|v| present(v)) {
+        vs.retain(|v| present(v));
+        if vs.len() == 1 {
+            return vs.first().copied();
+        }
+    }
     match policy {
         Policy::Quality => {
             vs.sort_by_key(|v| (std::cmp::Reverse(v.precision.quality()), !present(v)));
@@ -681,8 +697,84 @@ mod tests {
             force_fit: None,
             force_precision: None,
             force_vae_tiled: None,
+            force_files: &BTreeMap::new(),
             escalate,
         })
+    }
+
+    #[test]
+    fn files_on_disk_and_chosen_files_win() {
+        let pc = hw(8.0, 32.0, (12, 0));
+        let s = Settings::default();
+        // A local GGUF (added as a variant by the server) next to the downloadable bf16.
+        let m = model(
+            &[
+                ("z_image_turbo_bf16.safetensors", Precision::Bf16, 11.5),
+                ("z_image_turbo-Q4_K_M.gguf", Precision::Q4, 3.9),
+            ],
+            7.5,
+        );
+        let mut values = BTreeMap::new();
+        values.insert("size".into(), json!({"w": 1024, "h": 1024}));
+        let on_disk: BTreeMap<String, u64> =
+            [("z_image_turbo-Q4_K_M.gguf".to_string(), 4_187_593_113u64)].into();
+        let input = |files: &BTreeMap<String, String>, on_disk: &BTreeMap<String, u64>| {
+            plan(&Input {
+                hw: &pc,
+                manifest: &m,
+                op: "txt2img",
+                values: &values,
+                on_disk,
+                history: &[],
+                settings: &s,
+                force_fit: None,
+                force_precision: None,
+                force_vae_tiled: None,
+                force_files: files,
+                escalate: 0,
+            })
+        };
+        let none = BTreeMap::new();
+        let p = input(&none, &on_disk);
+        assert!(
+            p.variants
+                .contains(&("diffusion".into(), "z_image_turbo-Q4_K_M.gguf".into())),
+            "{:?}",
+            p.variants
+        );
+        assert!(
+            !p.downloads.iter().any(|(n, _)| n.contains("bf16")),
+            "nothing downloaded when a usable file is on disk"
+        );
+        // With nothing on disk the policy picks as before.
+        let p = input(&none, &BTreeMap::new());
+        assert!(
+            p.variants
+                .iter()
+                .any(|(_, n)| n.ends_with(".gguf") || n.ends_with(".safetensors"))
+        );
+        // Chosen by the user: wins, even over the file on disk.
+        let chosen: BTreeMap<String, String> = [(
+            "diffusion".to_string(),
+            "z_image_turbo_bf16.safetensors".to_string(),
+        )]
+        .into();
+        let p = input(&chosen, &on_disk);
+        assert!(
+            p.variants
+                .contains(&("diffusion".into(), "z_image_turbo_bf16.safetensors".into())),
+            "{:?}",
+            p.variants
+        );
+        // A choice that is not a variant is ignored.
+        let bogus: BTreeMap<String, String> =
+            [("diffusion".to_string(), "../../evil.gguf".to_string())].into();
+        assert!(
+            !input(&bogus, &on_disk)
+                .variants
+                .iter()
+                .any(|(_, n)| n.contains("evil"))
+        );
     }
 
     #[test]

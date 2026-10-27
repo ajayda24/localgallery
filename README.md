@@ -24,6 +24,16 @@ Built-in models: Stable Diffusion / SDXL checkpoints (txt2img, img2img, inpaint,
 
 Optional: add your Hugging Face token in Settings for gated models (it is only ever sent to huggingface.co). You can also point Settings at an existing ComfyUI models folder.
 
+### More models from Hugging Face
+Models › Hugging Face lists the repositories of an organisation (Comfy-Org by default, which repackages most models for ComfyUI) with each file's real size. A file downloads into the right `models\` subfolder, and the list says which built-in model or workflow uses it. A file nobody uses yet can still be downloaded; to create with it you need a workflow that loads it (import one, or use an official workflow tool).
+
+File sizes on the model cards come from Hugging Face too, and are cached in `data\cache`. Until a size is known (offline, or a mirror that doesn't say), the card shows **size unknown** rather than guessing whether it fits.
+
+### GGUF models
+Put a `.gguf` diffusion model in `models\diffusion_models` (and a `.gguf` text encoder in `models\text_encoders`, if you have one), then press Rescan on the Files tab. LocalGallery reads the architecture from the file and offers it as a variant of each matching model; Files › Used by shows which. Files you already have win over downloads. To pick one explicitly, use Create › Ultra › File.
+
+The engine needs [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) for this (ComfyUI itself has no GGUF loader). The engine install adds it at a pinned commit, and an existing engine gets it the next time it starts. Jobs then load GGUF files with its loaders automatically, in built-in models and imported workflows alike. A GGUF holds only the diffusion model (or one text encoder), so it replaces that part of a model; the VAE and the rest still come from the model's own files.
+
 To check it on your PC, close the app and run, from the app folder:
 ```
 powershell -ExecutionPolicy Bypass -File tools\smoke.ps1   # engine + first image: time, VRAM, RAM, spill, black-image check
@@ -56,4 +66,4 @@ The real-engine tests are opt-in and take a running ComfyUI (see `docs/progress.
 - `docs/progress.md`: milestone status.
 - `docs/benchmarks.md`: GPU results (to be filled in on real hardware).
 
-ComfyUI is GPL-3.0 and runs as a separate process; LocalGallery does not include or modify its source.
+ComfyUI is GPL-3.0 and runs as a separate process; LocalGallery does not include or modify its source. ComfyUI-GGUF (Apache-2.0) is downloaded into the engine at install time, unmodified.

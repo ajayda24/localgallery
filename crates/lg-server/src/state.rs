@@ -269,7 +269,7 @@ pub fn plan_for(
         .precision
         .as_deref()
         .and_then(|p| serde_json::from_value(Value::String(p.into())).ok());
-    let m = &*app.sizes.apply(m);
+    let m = &*app.effective(m);
     lg_planner::plan(&lg_planner::Input {
         hw: &hw,
         manifest: m,
@@ -281,8 +281,20 @@ pub fn plan_for(
         force_fit,
         force_precision,
         force_vae_tiled: spec.memory.vae_tiled,
+        force_files: &spec.memory.files,
         escalate,
     })
+}
+
+impl App {
+    /// A manifest as this PC sees it: unknown sizes filled in, and local files that can stand
+    /// in for its files (e.g. your own GGUF) added as variants.
+    pub fn effective<'a>(
+        &self,
+        m: &'a lg_types::Manifest,
+    ) -> std::borrow::Cow<'a, lg_types::Manifest> {
+        self.library.with_local_files(self.sizes.apply(m))
+    }
 }
 
 /// Learn unknown download sizes at startup and whenever the model list changes (new
