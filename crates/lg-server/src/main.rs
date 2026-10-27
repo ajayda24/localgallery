@@ -14,9 +14,10 @@ struct Args {
     /// Engine: managed | fake | http://host:port (an existing ComfyUI).
     #[arg(long, default_value = "managed")]
     engine: String,
-    /// For the fake engine: node definitions to serve (a captured /object_info).
+    /// For the fake engine: node definitions to serve (a captured /object_info). Repeat to
+    /// merge several files, e.g. core nodes plus an add-on's.
     #[arg(long)]
-    fake_object_info: Option<PathBuf>,
+    fake_object_info: Vec<PathBuf>,
     #[arg(long, default_value_t = 40)]
     fake_step_ms: u64,
     #[arg(long)]
@@ -26,6 +27,9 @@ struct Args {
     /// Fixed token (tests). Random per launch otherwise.
     #[arg(long)]
     token: Option<String>,
+    /// Hugging Face endpoint for size lookups and the model browser: a mirror URL, or "off".
+    #[arg(long)]
+    hf_endpoint: Option<String>,
     /// Development only: accept any Host header and skip the token.
     #[arg(long)]
     dev: bool,
@@ -63,6 +67,7 @@ async fn main() -> anyhow::Result<()> {
             manifests: a.manifests,
             ui: a.ui,
             token: a.token,
+            hf_endpoint: a.hf_endpoint,
         },
         a.port,
         lg_server::api::ServeOptions {

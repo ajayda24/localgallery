@@ -1,15 +1,31 @@
 //! Model files on disk (the app's `models/` plus extra folders), and downloads.
 
 use lg_modelscan::ModelInfo;
-use lg_types::CoreEvent;
+use lg_types::{CoreEvent, FileVariant, Manifest};
 use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
+
+const GB: f64 = 1024.0 * 1024.0 * 1024.0;
+
+/// ComfyUI reads `unet` as `diffusion_models` and `clip` as `text_encoders`.
+pub fn same_folder(a: &str, b: &str) -> bool {
+    let norm = |f: &str| {
+        match f {
+            "unet" => "diffusion_models",
+            "clip" => "text_encoders",
+            other => other,
+        }
+        .to_string()
+    };
+    norm(a) == norm(b)
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LibraryFile {
@@ -100,7 +116,52 @@ impl Library {
         self.files
             .read()
             .iter()
-            .any(|f| f.folder == folder && f.name == name)
+            .any(|f| same_folder(&f.folder, folder) && f.name == name)
+    }
+
+    /// The manifest plus every local file that can stand in for one of its files (by
+    /// architecture, see `ModelFile::accepts`), e.g. a GGUF you downloaded yourself.
+    pub fn with_local_files<'a>(&self, m: Cow<'a, Manifest>) -> Cow<'a, Manifest> {
+        let files = self.files.read();
+        let extra: Vec<(usize, FileVariant)> = m
+            .files
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| !f.arch.is_empty())
+            .flat_map(|(i, f)| {
+                files
+                    .iter()
+                    .filter(|lf| same_folder(&lf.folder, &f.folder))
+                    .filter(|lf| !f.variants.iter().any(|v| v.name == lf.name))
+                    .filter_map(|lf| {
+                        let info = lf.info.as_ref()?;
+                        f.accepts(&info.kind, info.arch.as_deref(), &lf.name)
+                            .then(|| {
+                                (
+                                    i,
+                                    FileVariant {
+                                        name: lf.name.clone(),
+                                        precision: info.precision.unwrap_or_else(|| {
+                                            lg_workflow::import::guess_precision(&lf.name)
+                                        }),
+                                        size_gb: lf.size_bytes as f64 / GB,
+                                        url: None,
+                                        sha256: None,
+                                    },
+                                )
+                            })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        if extra.is_empty() {
+            return m;
+        }
+        let mut m = m.into_owned();
+        for (i, v) in extra {
+            m.files[i].variants.push(v);
+        }
+        Cow::Owned(m)
     }
 
     pub fn names_in(&self, folder: &str) -> Vec<String> {

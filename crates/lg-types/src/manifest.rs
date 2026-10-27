@@ -71,12 +71,50 @@ pub struct ModelFile {
     /// Only needed for these ops. Empty = every op.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ops: Vec<String>,
+    /// Architectures (as the model scanner names them, e.g. "lumina2", "flux", "wan2.1",
+    /// "qwen3") a local file must have to stand in for this one. Matching files in the models
+    /// folder, safetensors or GGUF, become extra variants. Empty = only the listed variants.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arch: Vec<String>,
+    /// And its file name must contain this, e.g. "high_noise" for one of two experts. Case and
+    /// separators are ignored, so "Wan2.2-HighNoise-Q4.gguf" matches "high_noise".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name_contains: Option<String>,
 }
 
 impl ModelFile {
+    /// Whether a scanned local file can stand in for this one.
+    pub fn accepts(&self, kind: &str, arch: Option<&str>, file_name: &str) -> bool {
+        let Some(arch) = arch else { return false };
+        let want_kind = match self.folder.as_str() {
+            "diffusion_models" | "unet" => "diffusion",
+            "text_encoders" | "clip" => "text_encoder",
+            "vae" => "vae",
+            "checkpoints" => "checkpoint",
+            _ => return false,
+        };
+        kind == want_kind
+            && self
+                .arch
+                .iter()
+                .any(|a| arch == a || arch.starts_with(&format!("{a}-")))
+            && self
+                .name_contains
+                .as_ref()
+                .is_none_or(|n| squash(file_name).contains(&squash(n)))
+    }
+
     pub fn needed_for(&self, op: &str) -> bool {
         !self.optional && (self.ops.is_empty() || self.ops.iter().any(|o| o == op))
     }
+}
+
+/// Lower case without separators, so "high_noise" matches "HighNoise" and "high-noise".
+fn squash(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -360,5 +398,43 @@ impl Manifest {
             .filter_map(|f| f.variants.first())
             .map(|v| v.size_gb)
             .sum()
+    }
+}
+
+#[cfg(test)]
+mod accepts_tests {
+    use super::*;
+
+    fn file(folder: &str, arch: &[&str], name_contains: Option<&str>) -> ModelFile {
+        ModelFile {
+            role: "r".into(),
+            folder: folder.into(),
+            variants: vec![],
+            optional: false,
+            ops: vec![],
+            arch: arch.iter().map(|a| a.to_string()).collect(),
+            name_contains: name_contains.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn local_files_match_by_kind_arch_and_name() {
+        let wan = file("diffusion_models", &["wan2.1"], Some("high_noise"));
+        assert!(wan.accepts(
+            "diffusion",
+            Some("wan2.1"),
+            "Wan2.2-T2V-A14B-HighNoise-Q4_K_M.gguf"
+        ));
+        assert!(!wan.accepts(
+            "diffusion",
+            Some("wan2.1"),
+            "Wan2.2-T2V-A14B-LowNoise-Q4_K_M.gguf"
+        ));
+        assert!(!wan.accepts("text_encoder", Some("wan2.1"), "high_noise.gguf"));
+        let flux = file("unet", &["flux"], None);
+        assert!(flux.accepts("diffusion", Some("flux-schnell"), "x.gguf"));
+        assert!(!flux.accepts("diffusion", Some("flux2"), "x.gguf"));
+        assert!(!flux.accepts("diffusion", None, "x.gguf"));
+        assert!(!file("loras", &["flux"], None).accepts("diffusion", Some("flux"), "x"));
     }
 }

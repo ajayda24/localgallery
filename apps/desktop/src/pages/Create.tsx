@@ -22,7 +22,7 @@ function CreateFor({ model, op }: { model: ModelDetail; op: string }) {
   const { setValue, setValues, setOp, level, setLevel, batch, setBatch, toast, resetValues } = useStore();
   const [view, setView] = useState<"result" | "canvas">(hasCanvas(model, op) ? "canvas" : "result");
   const [busy, setBusy] = useState(false);
-  const [memory, setMemory] = useState<{ plan: string; precision: string; vae_tiled: string }>({ plan: "auto", precision: "", vae_tiled: "auto" });
+  const [memory, setMemory] = useState<Memory>({ plan: "auto", precision: "", vae_tiled: "auto", files: {} });
   const [overrides, setOverrides] = useState("");
   useEffect(() => setView(hasCanvas(model, op) ? "canvas" : "result"), [model.id, op]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -44,6 +44,12 @@ function CreateFor({ model, op }: { model: ModelDetail; op: string }) {
         plan: memory.plan === "auto" ? null : memory.plan,
         precision: memory.precision || null,
         vae_tiled: memory.vae_tiled === "auto" ? null : memory.vae_tiled === "on",
+        // Only picks that still name a file of this model.
+        files: Object.fromEntries(
+          Object.entries(memory.files).filter(([role, name]) =>
+            model.files.some((f) => f.role === role && f.variants.some((v) => v.name === name)),
+          ),
+        ),
       },
       overrides: ov,
     };
@@ -195,7 +201,9 @@ function ModelPicker({ current }: { current: ModelDetail }) {
 
 export function FitBadge({ m }: { m: ModelSummary }) {
   if (!m.fit) return null;
-  const label = { resident: "fits your GPU", offload: "uses RAM too", stream: "streams from disk", too_big: "too big" }[m.fit.fit];
+  const label = m.fit.sizes_known === false
+    ? "size unknown"
+    : { resident: "fits your GPU", offload: "uses RAM too", stream: "streams from disk", too_big: "too big" }[m.fit.fit];
   return <Badge color={m.fit.badge} title={[...m.fit.explain, ...m.fit.warnings].join("\n")}><Gauge size={11} /> {label}</Badge>;
 }
 
@@ -217,12 +225,13 @@ function PlanCard({ spec, model }: { spec: { model: string; op: string; values: 
     return () => clearTimeout(t);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!plan) return err ? <p className="text-xs muted">{err}</p> : null;
-  const badge = { resident: "green", offload: "yellow", stream: "red", too_big: "red" }[plan.fit] as "green";
+  const unknown = plan.sizes_known === false;
+  const badge = (unknown ? "gray" : { resident: "green", offload: "yellow", stream: "red", too_big: "red" }[plan.fit]) as "green";
   return (
     <div className="rounded-lg panel-2 border line p-2.5 text-xs" data-testid="plan">
       <button className="flex w-full items-center gap-2 cursor-pointer" onClick={() => setOpen(!open)}>
         <Cpu size={14} className="muted" />
-        <Badge color={badge}>{{ resident: "Runs on GPU", offload: "GPU + RAM", stream: "Streams from disk", too_big: "Too big" }[plan.fit]}</Badge>
+        <Badge color={badge}>{unknown ? "Size unknown" : { resident: "Runs on GPU", offload: "GPU + RAM", stream: "Streams from disk", too_big: "Too big" }[plan.fit]}</Badge>
         {plan.precision ? <Badge color="gray">{plan.precision}</Badge> : null}
         {plan.estimated_seconds ? <span className="muted">≈ {formatSeconds(plan.estimated_seconds)}</span> : null}
         <span className="ml-auto muted">{open ? "Hide" : "Why?"}</span>
@@ -240,9 +249,11 @@ function PlanCard({ spec, model }: { spec: { model: string; op: string; values: 
   );
 }
 
+type Memory = { plan: string; precision: string; vae_tiled: string; files: Record<string, string> };
+
 function UltraPanel({ memory, setMemory, overrides, setOverrides, model, op }: {
-  memory: { plan: string; precision: string; vae_tiled: string };
-  setMemory: (m: { plan: string; precision: string; vae_tiled: string }) => void;
+  memory: Memory;
+  setMemory: (m: Memory) => void;
   overrides: string;
   setOverrides: (s: string) => void;
   model: ModelDetail;
@@ -255,6 +266,8 @@ function UltraPanel({ memory, setMemory, overrides, setOverrides, model, op }: {
     bad = true;
   }
   const precisions = [...new Set(model.files.flatMap((f) => f.variants.map((v) => v.precision)))];
+  // Roles with a choice of file, e.g. a GGUF found in the models folder next to the built-in one.
+  const choosable = model.files.filter((f) => f.variants.length > 1 && (f.ops.length === 0 || f.ops.includes(op)));
   return (
     <div className="rounded-xl border border-accent-500/30 p-3 space-y-3" data-testid="ultra">
       <h3 className="text-xs uppercase tracking-wide text-[var(--accent-text)]">Engine & memory</h3>
@@ -274,6 +287,28 @@ function UltraPanel({ memory, setMemory, overrides, setOverrides, model, op }: {
           </select>
         </Field>
       ) : null}
+      {choosable.map((f) => (
+        <Field key={f.role} label={`File: ${f.role.replace(/_/g, " ")}`} help={`From models/${f.folder}. Auto prefers files you already have.`}>
+          <select
+            aria-label={`file for ${f.role}`}
+            value={memory.files[f.role] ?? ""}
+            onChange={(e) => {
+              const files = { ...memory.files };
+              if (e.target.value) files[f.role] = e.target.value;
+              else delete files[f.role];
+              setMemory({ ...memory, files });
+            }}
+          >
+            <option value="">Auto</option>
+            {f.variants.map((v) => (
+              <option key={v.name} value={v.name}>
+                {v.name}
+                {f.present.includes(v.name) ? " (on disk)" : v.downloadable ? "" : " (missing)"}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ))}
       <Field label="Tiled decode" help="Decodes in tiles to save memory on large images and videos.">
         <select value={memory.vae_tiled} onChange={(e) => setMemory({ ...memory, vae_tiled: e.target.value })}>
           <option value="auto">Auto</option>

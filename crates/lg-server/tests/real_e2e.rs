@@ -108,6 +108,7 @@ async fn whole_stack_on_real_comfyui() {
             manifests: Some(repo.join("manifests")),
             ui: None,
             token: Some(TOKEN.into()),
+            hf_endpoint: Some("off".into()),
         },
         0,
         lg_server::api::ServeOptions {

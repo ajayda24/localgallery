@@ -19,6 +19,20 @@ pub struct Lock {
     pub torch: std::collections::BTreeMap<String, TorchProfile>,
     #[serde(default)]
     pub never_install: Vec<String>,
+    /// Pinned ComfyUI extensions installed with the engine (e.g. ComfyUI-GGUF).
+    #[serde(default)]
+    pub custom_nodes: Vec<LockNode>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LockNode {
+    pub name: String,
+    pub commit: String,
+    /// Zip URL with `{commit}`.
+    pub archive: String,
+    /// Extra Python packages, installed under the torch constraints.
+    #[serde(default)]
+    pub requirements: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -72,6 +86,13 @@ impl Layout {
         } else {
             self.venv().join("bin").join("python")
         }
+    }
+    /// ComfyUI runs with `--base-directory full/base`, so extensions live here.
+    pub fn custom_nodes(&self) -> PathBuf {
+        self.full().join("base").join("custom_nodes")
+    }
+    fn addon_marker(&self, name: &str) -> PathBuf {
+        self.custom_nodes().join(name).join(".localgallery.json")
     }
     pub fn uv_dir(&self) -> PathBuf {
         self.engines.join("tools").join("uv")
@@ -130,6 +151,11 @@ pub enum Step {
         dest: PathBuf,
         strip_top: bool,
     },
+    /// Delete a folder if it exists (before reinstalling an extension).
+    RemoveDir {
+        label: String,
+        path: PathBuf,
+    },
     /// Copy an existing ComfyUI checkout (offline installs and tests).
     CopyDir {
         label: String,
@@ -161,6 +187,7 @@ impl Step {
             Step::Download { label, .. }
             | Step::Extract { label, .. }
             | Step::CopyDir { label, .. }
+            | Step::RemoveDir { label, .. }
             | Step::Run { label, .. }
             | Step::FreezeTorch { label }
             | Step::WriteFile { label, .. }
@@ -179,6 +206,106 @@ pub struct InstallOptions {
     pub comfy_source: Option<PathBuf>,
     /// Override the torch package index (e.g. PyPI for CPU-only test machines).
     pub torch_index: Option<String>,
+    /// Copy extensions from these folders (by name) instead of downloading them.
+    pub addon_sources: std::collections::BTreeMap<String, PathBuf>,
+}
+
+/// Extensions from the lock that are not installed at the pinned commit.
+pub fn missing_addons<'a>(lock: &'a Lock, layout: &Layout) -> Vec<&'a LockNode> {
+    lock.custom_nodes
+        .iter()
+        .filter(|n| {
+            let marker = std::fs::read_to_string(layout.addon_marker(&n.name)).unwrap_or_default();
+            !marker.contains(&n.commit)
+        })
+        .collect()
+}
+
+/// Steps that install the given extensions into an engine whose venv exists.
+fn addon_steps(
+    nodes: &[&LockNode],
+    layout: &Layout,
+    uv: &Path,
+    opts: &InstallOptions,
+) -> Vec<Step> {
+    let dl = layout.data.join("cache").join("downloads");
+    let py = layout.venv_python().to_string_lossy().into_owned();
+    let mut steps = Vec::new();
+    for n in nodes {
+        let dest = layout.custom_nodes().join(&n.name);
+        steps.push(Step::RemoveDir {
+            label: format!("Prepare {}", n.name),
+            path: dest.clone(),
+        });
+        match opts.addon_sources.get(&n.name) {
+            Some(src) => steps.push(Step::CopyDir {
+                label: format!("Copy {}", n.name),
+                from: src.clone(),
+                to: dest.clone(),
+            }),
+            None => {
+                let zip = dl.join(format!(
+                    "{}-{}.zip",
+                    n.name,
+                    &n.commit[..12.min(n.commit.len())]
+                ));
+                steps.push(Step::Download {
+                    label: format!("Download {}", n.name),
+                    url: n.archive.replace("{commit}", &n.commit),
+                    dest: zip.clone(),
+                });
+                steps.push(Step::Extract {
+                    label: format!("Unpack {}", n.name),
+                    archive: zip,
+                    dest: dest.clone(),
+                    strip_top: true,
+                });
+            }
+        }
+        if !n.requirements.is_empty() {
+            let mut args: Vec<String> = vec![
+                "pip".into(),
+                "install".into(),
+                "--python".into(),
+                py.clone(),
+            ];
+            args.extend(n.requirements.iter().cloned());
+            // Relative on purpose (see the ComfyUI requirements step): torch stays pinned.
+            args.extend(["-c".into(), "constraints.txt".into()]);
+            steps.push(Step::Run {
+                label: format!("Install {} requirements", n.name),
+                program: uv.to_path_buf(),
+                args,
+            });
+        }
+        steps.push(Step::WriteFile {
+            label: format!("Finish {}", n.name),
+            path: layout.addon_marker(&n.name),
+            contents: serde_json::json!({"name": n.name, "commit": n.commit}).to_string(),
+        });
+    }
+    steps
+}
+
+/// Bring an existing engine's extensions up to the lock (e.g. after an app update adds one).
+pub fn addons_plan(
+    lock: &Lock,
+    layout: &Layout,
+    opts: &InstallOptions,
+) -> Result<Vec<Step>, String> {
+    let missing = missing_addons(lock, layout);
+    if missing.is_empty() {
+        return Ok(Vec::new());
+    }
+    let uv = match &opts.uv {
+        Some(p) => p.clone(),
+        None if cfg!(windows) => layout.uv_dir().join("uv.exe"),
+        None => return Err("on this OS, pass the path to an installed uv".into()),
+    };
+    if !uv.exists() {
+        return Err(format!("uv not found at {}", uv.display()));
+    }
+    Ok(addon_steps(&missing, layout, &uv, opts))
 }
 
 pub fn plan(lock: &Lock, layout: &Layout, opts: &InstallOptions) -> Result<Vec<Step>, String> {
@@ -284,7 +411,7 @@ pub fn plan(lock: &Lock, layout: &Layout, opts: &InstallOptions) -> Result<Vec<S
         .into_owned();
     steps.push(Step::Run {
         label: "Install ComfyUI requirements".into(),
-        program: uv,
+        program: uv.clone(),
         args: vec![
             "pip".into(),
             "install".into(),
@@ -298,6 +425,8 @@ pub fn plan(lock: &Lock, layout: &Layout, opts: &InstallOptions) -> Result<Vec<S
             "constraints.txt".into(),
         ],
     });
+    let all: Vec<&LockNode> = lock.custom_nodes.iter().collect();
+    steps.extend(addon_steps(&all, layout, &uv, opts));
     steps.push(Step::SelfTest {
         label: "Check the GPU works".into(),
     });
@@ -451,6 +580,13 @@ pub async fn run(
                 tokio::task::spawn_blocking(move || extract_zip(&a, &d, s))
                     .await
                     .map_err(|e| e.to_string())??;
+            }
+            Step::RemoveDir { path, .. } => {
+                if path.exists() {
+                    tokio::fs::remove_dir_all(path)
+                        .await
+                        .map_err(|e| format!("{}: {e}", path.display()))?;
+                }
             }
             Step::CopyDir { from, to, .. } => {
                 let (f, t) = (from.clone(), to.clone());
@@ -667,6 +803,7 @@ mod tests {
                 uv: Some("/usr/bin/uv".into()),
                 comfy_source: None,
                 torch_index: None,
+                addon_sources: Default::default(),
             },
         )
         .unwrap();
@@ -674,11 +811,31 @@ mod tests {
         assert!(text.contains("cu130"));
         assert!(text.contains("9fe7ef764d04"));
         assert!(!text.contains("xformers"));
-        // ComfyUI requirements are installed under the torch constraints.
-        let Step::Run { args, .. } = &steps[steps.len() - 3] else {
-            panic!("{steps:?}")
-        };
-        assert!(args.iter().any(|a| a == "-c"));
+        // ComfyUI's and each extension's requirements install under the torch constraints.
+        let runs: Vec<&Vec<String>> = steps
+            .iter()
+            .filter_map(|s| match s {
+                Step::Run { label, args, .. } if label.contains("requirements") => Some(args),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(runs.len(), 2, "{steps:?}");
+        assert!(runs.iter().all(|a| a.iter().any(|x| x == "-c")));
+        assert!(
+            runs[1].iter().any(|x| x.starts_with("gguf")),
+            "{:?}",
+            runs[1]
+        );
+        // GGUF support: pinned archive, unpacked into the engine's custom_nodes.
+        assert!(
+            text.contains("ComfyUI-GGUF/archive/6ea2651e7df66d7585f6ffee804b20e92fb38b8a.zip"),
+            "{text}"
+        );
+        assert!(
+            text.contains("base/custom_nodes/ComfyUI-GGUF")
+                || text.contains("base\\\\custom_nodes\\\\ComfyUI-GGUF"),
+            "{text}"
+        );
         for (_, v) in layout.child_env() {
             assert!(
                 v.starts_with("/apps/Local Gallery") || !v.contains('/'),

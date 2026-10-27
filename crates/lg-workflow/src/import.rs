@@ -558,24 +558,93 @@ pub fn blueprint_tool(
     m.files = imp
         .models
         .iter()
-        .map(|r| lg_types::ModelFile {
-            role: r.name.clone(),
-            folder: r.directory.clone(),
-            optional: false,
-            ops: vec![],
-            variants: vec![lg_types::FileVariant {
-                name: r.name.clone(),
-                precision: guess_precision(&r.name),
-                size_gb: 0.0,
-                url: r.url.clone(),
-                sha256: None,
-            }],
+        .map(|r| {
+            let (arch, name_contains) = guess_arch(&r.name, &r.directory);
+            lg_types::ModelFile {
+                role: r.name.clone(),
+                folder: r.directory.clone(),
+                optional: false,
+                ops: vec![],
+                arch,
+                name_contains,
+                variants: vec![lg_types::FileVariant {
+                    name: r.name.clone(),
+                    precision: guess_precision(&r.name),
+                    size_gb: 0.0,
+                    url: r.url.clone(),
+                    sha256: None,
+                }],
+            }
         })
         .collect();
     Ok(m)
 }
 
 /// Weight precision from a model file name (`..._fp8_scaled`, `...-Q4_K_M.gguf`, ...).
+/// Which architectures a local file needs to stand in for a workflow's model file, guessed
+/// from the file name the workflow uses (official workflows name files consistently). Returns
+/// the accepted architectures (scanner names) and an extra name filter (e.g. "high_noise").
+/// Only diffusion models and text encoders: the parts that come in GGUF form.
+pub fn guess_arch(name: &str, folder: &str) -> (Vec<String>, Option<String>) {
+    let n = name.to_ascii_lowercase();
+    let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    match folder {
+        "diffusion_models" | "unet" => {
+            let arch = if ["flux2", "flux-2", "flux.2"].iter().any(|k| n.contains(k)) {
+                v(&["flux2"])
+            } else if ["flux1", "flux-1", "flux.1"].iter().any(|k| n.contains(k)) {
+                v(&["flux"])
+            } else if n.contains("qwen_image") || n.contains("qwen-image") {
+                v(&["qwen_image"])
+            } else if n.contains("z_image")
+                || n.contains("z-image")
+                || n.contains("lumina")
+                || n.contains("netayume")
+            {
+                v(&["lumina2"])
+            } else if n.contains("wan2") || n.contains("wan_2") {
+                v(&["wan2.1"])
+            } else if n.contains("ltx") {
+                v(&["ltxv", "ltxav"])
+            } else if n.contains("hidream") {
+                v(&["hidream"])
+            } else if n.contains("chroma") {
+                v(&["chroma"])
+            } else if n.contains("sd3") {
+                v(&["sd3"])
+            } else if n.contains("hunyuan") {
+                v(&["hunyuan_video"])
+            } else {
+                return (vec![], None);
+            };
+            // Two-expert models: keep the high- and low-noise halves apart.
+            let part = ["high_noise", "low_noise"]
+                .into_iter()
+                .find(|p| n.contains(p));
+            (arch, part.map(str::to_string))
+        }
+        "text_encoders" | "clip" => {
+            let (arch, key) = if n.contains("umt5") {
+                (v(&["t5"]), "umt5")
+            } else if n.contains("t5") {
+                (v(&["t5"]), "t5")
+            } else if n.contains("qwen_2.5_vl") || n.contains("qwen2.5") || n.contains("qwen2_5") {
+                (v(&["qwen2vl", "llm"]), "qwen")
+            } else if n.contains("qwen3") || n.contains("qwen_3") {
+                (v(&["qwen3", "qwen3vl", "llm"]), "qwen")
+            } else if n.contains("gemma") {
+                (v(&["gemma3", "llm"]), "gemma")
+            } else if n.contains("clip_l") {
+                (v(&["clip_l"]), "clip_l")
+            } else {
+                return (vec![], None);
+            };
+            (arch, Some(key.to_string()))
+        }
+        _ => (vec![], None),
+    }
+}
+
 pub fn guess_precision(name: &str) -> lg_types::Precision {
     use lg_types::Precision::*;
     let n = name.to_ascii_lowercase();
@@ -1072,6 +1141,37 @@ mod tests {
                 [8, 4, 2, 8, 1, "VAE"], [9, 8, 0, 9, 0, "IMAGE"]
             ]
         })
+    }
+
+    #[test]
+    fn guesses_which_local_files_can_stand_in() {
+        let g = |n, f| guess_arch(n, f);
+        assert_eq!(
+            g("z_image_turbo_bf16.safetensors", "diffusion_models").0,
+            ["lumina2"]
+        );
+        assert_eq!(
+            g("flux2_dev_fp8mixed.safetensors", "diffusion_models").0,
+            ["flux2"]
+        );
+        assert_eq!(
+            g(
+                "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+                "diffusion_models"
+            ),
+            (vec!["wan2.1".to_string()], Some("low_noise".to_string()))
+        );
+        assert_eq!(
+            g("umt5_xxl_fp8_e4m3fn_scaled.safetensors", "text_encoders"),
+            (vec!["t5".to_string()], Some("umt5".to_string()))
+        );
+        assert_eq!(
+            g("qwen_3_4b.safetensors", "text_encoders").1.as_deref(),
+            Some("qwen")
+        );
+        // Unknown names and other folders accept nothing extra.
+        assert!(g("my_model.safetensors", "diffusion_models").0.is_empty());
+        assert!(g("z_image_turbo.safetensors", "loras").0.is_empty());
     }
 
     #[test]

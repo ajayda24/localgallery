@@ -14,17 +14,43 @@
   "torch": {
     "cuda": {
       "index": "https://download.pytorch.org/whl/cu130",
-      "packages": ["torch", "torchvision", "torchaudio"],
+      "packages": [
+        "torch",
+        "torchvision",
+        "torchaudio"
+      ],
       "note": "CUDA 13.0 wheels support Blackwell (sm_120). Exact versions are recorded after install into engines/full/constraints.txt."
     },
     "cpu": {
       "index": "https://download.pytorch.org/whl/cpu",
-      "packages": ["torch", "torchvision", "torchaudio"]
+      "packages": [
+        "torch",
+        "torchvision",
+        "torchaudio"
+      ]
     }
   },
-  "never_install": ["xformers"],
+  "never_install": [
+    "xformers"
+  ],
   "notes": [
     "ComfyUI's own portable build ships Python 3.13 with PyTorch cu130 (README at the pinned commit).",
     "Video files are written by ComfyUI's SaveVideo node through PyAV, which bundles FFmpeg, so no separate FFmpeg download is needed."
+  ],
+  "custom_nodes": [
+    {
+      "name": "ComfyUI-GGUF",
+      "repo": "https://github.com/city96/ComfyUI-GGUF",
+      "commit": "6ea2651e7df66d7585f6ffee804b20e92fb38b8a",
+      "date": "2026-01-12",
+      "license": "Apache-2.0",
+      "archive": "https://github.com/city96/ComfyUI-GGUF/archive/{commit}.zip",
+      "requirements": [
+        "gguf>=0.13.0",
+        "sentencepiece",
+        "protobuf"
+      ],
+      "purpose": "Loads .gguf diffusion models and text encoders (UnetLoaderGGUF, CLIPLoaderGGUF, DualCLIPLoaderGGUF...). ComfyUI itself has no GGUF loader."
+    }
   ]
 }

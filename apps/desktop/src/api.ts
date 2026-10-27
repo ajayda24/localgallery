@@ -1,6 +1,6 @@
 // Thin client for the core's HTTP API. The session cookie is set when the app window opens.
 
-import type { Benchmark, Download, Job, JobSpec, LibraryFile, ModelDetail, ModelSummary, Output, Plan, Settings, SystemInfo } from "./types";
+import type { Benchmark, Download, HubFile, HubRepo, Job, JobSpec, LibraryFile, ModelDetail, ModelSummary, Output, Plan, Settings, SystemInfo } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -47,6 +47,8 @@ export const api = {
   favorite: (id: string, favorite: boolean) => call("POST", `/api/outputs/${id}/favorite`, { favorite }),
   outputAsAsset: (id: string) => call<Asset>("POST", `/api/outputs/${id}/as-asset`, {}),
   library: () => call<LibraryFile[]>("GET", "/api/library"),
+  hubRepos: (q: string, author: string) => call<{ repos: HubRepo[] }>("GET", `/api/hub/repos?${new URLSearchParams({ q, author })}`),
+  hubFiles: (repo: string) => call<{ repo: string; files: HubFile[]; other_files: number }>("GET", `/api/hub/files?${new URLSearchParams({ repo })}`),
   rescan: () => call("POST", "/api/library/rescan", {}),
   downloads: () => call<Download[]>("GET", "/api/downloads"),
   download: (body: { model?: string; op?: string; url?: string; folder?: string; name?: string }) => call<{ started: string[] }>("POST", "/api/downloads", body),

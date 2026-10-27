@@ -77,3 +77,18 @@ The first release build failed the portable check. During the window phase, Wind
 The headless-core phase on the same runner was clean.
 
 These writes are recognised by identifiers that only packaged apps can produce: Microsoft's package publisher id `8wekyb3d8bbwe`, `S-1-15-2-` AppContainer SIDs, `AppX` ProgIds and `AppData\Local\Packages\Microsoft.*`. LocalGallery is unpackaged and registers no package. Anything naming the app, and anything else unknown, still fails.
+
+## 2026-10-27: Model sizes come from Hugging Face, and unknown means unknown
+Manifests leave `size_gb` at 0 when the size wasn't verified, and cards showed "0.0 GB" and a green fit. The core now learns sizes with HEAD requests (Hugging Face reports `x-linked-size` on the redirect), eight at a time, cached in `data/cache/file-sizes.json`. The token goes only to Hugging Face hosts. `--hf-endpoint`/`LG_HF_ENDPOINT` points this at a mirror, or `off`. When the main file's size is still unknown, the planner picks a conservative offload plan, prints no numbers, and the badge reads "size unknown".
+
+## 2026-10-27: A Hugging Face browser, not automatic model support
+Models › Hugging Face lists an organisation's repos and files through the Hub API, maps `split_files/<folder>/` to the ComfyUI folder, and downloads into it. It does not turn a repo into a model: a new family needs nodes and a workflow, which only a manifest or an imported workflow provides. Each file says which models or workflows use it, so a download that nothing can run is visible as such.
+
+## 2026-10-27: GGUF through ComfyUI-GGUF, swapped in at graph-build time
+ComfyUI core cannot load GGUF. We pin city96/ComfyUI-GGUF (Apache-2.0, commit `6ea2651e`) in `engines.lock.json` under `custom_nodes`. It installs into `engines/full/base/custom_nodes` (ComfyUI runs with `--base-directory full/base`) with its requirements under the same constraints as ComfyUI. Existing engines get it on next start; if that fails, the engine starts without it and logs why.
+
+Workflows stay as they are. After the files are chosen, `gguf_loaders` replaces `UNETLoader` and the `CLIPLoader` family with their GGUF versions wherever the file is `.gguf`, dropping inputs those nodes don't have (`weight_dtype`). A GGUF checkpoint is refused with an explanation, because the format carries no text encoder or VAE.
+
+Local files become variants by architecture, not name: manifests list `arch` (scanner names, e.g. `lumina2`, `wan2.1`) and optionally `name_contains` (case and separators ignored, to tell Wan's high- and low-noise experts apart). GGUF files carry `general.architecture`, which the scanner maps to the same names. Imported workflows guess `arch` from the file names they use. The planner prefers on-disk variants and honours a per-role choice from Ultra.
+
+Verified here: graph rewriting, scanning, planning and the job path with the fake engine serving the add-on's node definitions (`tests/fixtures/object_info.gguf.json`, written from the pinned source, not captured). Verified on Windows CI: the add-on installs, its nodes load in the real engine, and they list the app's model folders. Not verified: inference from a real GGUF, because no GGUF weights were available on the build machine.

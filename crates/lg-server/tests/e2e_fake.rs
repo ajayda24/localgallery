@@ -16,12 +16,16 @@ async fn start(root: &Path, step_ms: u64) -> lg_server::Running {
         lg_server::Options {
             root: root.to_path_buf(),
             mode: lg_server::Mode::Fake {
-                object_info: Some(repo().join("tests/fixtures/object_info.json")),
+                object_info: vec![
+                    repo().join("tests/fixtures/object_info.json"),
+                    repo().join("tests/fixtures/object_info.gguf.json"),
+                ],
                 step_ms,
             },
             manifests: Some(repo().join("manifests")),
             ui: None,
             token: Some(TOKEN.into()),
+            hf_endpoint: Some("off".into()),
         },
         0,
         lg_server::api::ServeOptions {

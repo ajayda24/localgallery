@@ -62,6 +62,8 @@ pub struct Input<'a> {
     pub force_fit: Option<Fit>,
     pub force_precision: Option<Precision>,
     pub force_vae_tiled: Option<bool>,
+    /// File chosen by the user per role (must be one of that role's variants).
+    pub force_files: &'a BTreeMap<String, String>,
     /// Retry level after an out-of-memory error (0 = first try).
     pub escalate: u8,
 }
@@ -148,11 +150,13 @@ pub fn plan(i: &Input) -> Plan {
         let mut variants = Vec::new();
         let mut downloads = Vec::new();
         let mut precision = None;
+        let mut main_unknown = false;
         for f in i.manifest.files.iter().filter(|f| f.needed_for(i.op)) {
             let v = f
                 .variants
                 .iter()
-                .find(|v| i.on_disk.contains_key(&v.name))
+                .find(|v| i.force_files.get(&f.role) == Some(&v.name))
+                .or_else(|| f.variants.iter().find(|v| i.on_disk.contains_key(&v.name)))
                 .or_else(|| {
                     f.variants
                         .iter()
@@ -166,6 +170,7 @@ pub fn plan(i: &Input) -> Plan {
             }
             if component(f) == Component::Main {
                 precision = Some(v.precision);
+                main_unknown |= size_of(v, i.on_disk).0 <= 0.0;
             }
             variants.push((f.role.clone(), v.name.clone()));
         }
@@ -182,7 +187,8 @@ pub fn plan(i: &Input) -> Plan {
             explain,
             warnings,
             downloads,
-        );
+        )
+        .with_sizes_known(!main_unknown);
     };
     let laptop_extra = if i.hw.laptop == Some(true) { 0.3 } else { 0.0 };
     let vram_budget = (gpu.vram_total_gb - s.vram_headroom_gb - laptop_extra).max(0.5);
@@ -200,6 +206,7 @@ pub fn plan(i: &Input) -> Plan {
     let mut downloads = Vec::new();
     let mut main_precision = None;
     let mut unknown_sizes = false;
+    let mut main_unknown = false;
     for f in &needed {
         let comp = component(f);
         let mut variants: Vec<&lg_types::FileVariant> = f.variants.iter().collect();
@@ -208,7 +215,12 @@ pub fn plan(i: &Input) -> Plan {
         {
             variants.retain(|v| v.precision == p);
         }
+        let forced = i
+            .force_files
+            .get(&f.role)
+            .and_then(|n| variants.iter().copied().find(|v| &v.name == n));
         let best = match comp {
+            _ if forced.is_some() => forced,
             Component::Main => choose_main(
                 &variants,
                 i.on_disk,
@@ -227,7 +239,11 @@ pub fn plan(i: &Input) -> Plan {
         let Some(v) = best else { continue };
         let (gb, present) = size_of(v, i.on_disk);
         if gb <= 0.0 {
-            unknown_sizes = true;
+            if comp == Component::Main {
+                main_unknown = true;
+            } else {
+                unknown_sizes = true;
+            }
         }
         if !present {
             downloads.push((v.name.clone(), gb));
@@ -303,7 +319,20 @@ pub fn plan(i: &Input) -> Plan {
         fit = Fit::Stream;
     }
 
+    // Without the model's size the numbers below would be made up ("model 0.0 GB fits").
+    // Plan conservatively (weights may live in RAM) and say what is missing.
+    if main_unknown && measured.is_none() {
+        if fit == Fit::Resident {
+            fit = Fit::Offload;
+        }
+        explain.push(
+            "The model's file size isn't known yet, so whether it fits your GPU can't be estimated. \
+             It is looked up when the app can reach the download server, or read from the file once downloaded."
+                .into(),
+        );
+    }
     match fit {
+        _ if main_unknown && measured.is_none() => {}
         Fit::Resident => explain.push(format!(
             "Fits in your {} ({:.0} GB): model {main_peak:.1} GB + working memory {activation:.1} GB stays on the GPU.",
             short_gpu(&gpu.name),
@@ -455,6 +484,7 @@ pub fn plan(i: &Input) -> Plan {
         downloads,
     )
     .with_weights(weights)
+    .with_sizes_known(!main_unknown || measured.is_some())
 }
 
 fn choose_main<'a>(
@@ -471,6 +501,14 @@ fn choose_main<'a>(
     let gb = |v: &lg_types::FileVariant| size_of(v, on_disk).0;
     let present = |v: &lg_types::FileVariant| on_disk.contains_key(&v.name);
     let mut vs: Vec<&lg_types::FileVariant> = variants.to_vec();
+    // Use what is already on disk (a download you made, your own GGUF) before downloading
+    // another variant; the policy then picks among those. A file can still be forced per job.
+    if vs.iter().any(|v| present(v)) {
+        vs.retain(|v| present(v));
+        if vs.len() == 1 {
+            return vs.first().copied();
+        }
+    }
     match policy {
         Policy::Quality => {
             vs.sort_by_key(|v| (std::cmp::Reverse(v.precision.quality()), !present(v)));
@@ -567,15 +605,21 @@ fn finish(
         estimated_seconds,
         explain,
         warnings,
+        sizes_known: true,
     }
 }
 
 trait WithWeights {
     fn with_weights(self, w: f64) -> Self;
+    fn with_sizes_known(self, known: bool) -> Self;
 }
 impl WithWeights for Plan {
     fn with_weights(mut self, w: f64) -> Self {
         self.weights_gb = w;
+        self
+    }
+    fn with_sizes_known(mut self, known: bool) -> Self {
+        self.sizes_known = known;
         self
     }
 }
@@ -653,8 +697,127 @@ mod tests {
             force_fit: None,
             force_precision: None,
             force_vae_tiled: None,
+            force_files: &BTreeMap::new(),
             escalate,
         })
+    }
+
+    #[test]
+    fn files_on_disk_and_chosen_files_win() {
+        let pc = hw(8.0, 32.0, (12, 0));
+        let s = Settings::default();
+        // A local GGUF (added as a variant by the server) next to the downloadable bf16.
+        let m = model(
+            &[
+                ("z_image_turbo_bf16.safetensors", Precision::Bf16, 11.5),
+                ("z_image_turbo-Q4_K_M.gguf", Precision::Q4, 3.9),
+            ],
+            7.5,
+        );
+        let mut values = BTreeMap::new();
+        values.insert("size".into(), json!({"w": 1024, "h": 1024}));
+        let on_disk: BTreeMap<String, u64> =
+            [("z_image_turbo-Q4_K_M.gguf".to_string(), 4_187_593_113u64)].into();
+        let input = |files: &BTreeMap<String, String>, on_disk: &BTreeMap<String, u64>| {
+            plan(&Input {
+                hw: &pc,
+                manifest: &m,
+                op: "txt2img",
+                values: &values,
+                on_disk,
+                history: &[],
+                settings: &s,
+                force_fit: None,
+                force_precision: None,
+                force_vae_tiled: None,
+                force_files: files,
+                escalate: 0,
+            })
+        };
+        let none = BTreeMap::new();
+        let p = input(&none, &on_disk);
+        assert!(
+            p.variants
+                .contains(&("diffusion".into(), "z_image_turbo-Q4_K_M.gguf".into())),
+            "{:?}",
+            p.variants
+        );
+        assert!(
+            !p.downloads.iter().any(|(n, _)| n.contains("bf16")),
+            "nothing downloaded when a usable file is on disk"
+        );
+        // With nothing on disk the policy picks as before.
+        let p = input(&none, &BTreeMap::new());
+        assert!(
+            p.variants
+                .iter()
+                .any(|(_, n)| n.ends_with(".gguf") || n.ends_with(".safetensors"))
+        );
+        // Chosen by the user: wins, even over the file on disk.
+        let chosen: BTreeMap<String, String> = [(
+            "diffusion".to_string(),
+            "z_image_turbo_bf16.safetensors".to_string(),
+        )]
+        .into();
+        let p = input(&chosen, &on_disk);
+        assert!(
+            p.variants
+                .contains(&("diffusion".into(), "z_image_turbo_bf16.safetensors".into())),
+            "{:?}",
+            p.variants
+        );
+        // A choice that is not a variant is ignored.
+        let bogus: BTreeMap<String, String> =
+            [("diffusion".to_string(), "../../evil.gguf".to_string())].into();
+        assert!(
+            !input(&bogus, &on_disk)
+                .variants
+                .iter()
+                .any(|(_, n)| n.contains("evil"))
+        );
+    }
+
+    #[test]
+    fn unknown_model_size_is_not_a_fit() {
+        // The screenshot case: size_gb 0 used to read as "model 0.0 GB, fits your GPU".
+        let pc = hw(8.0, 32.0, (12, 0));
+        let s = Settings::default();
+        let m = model(
+            &[(
+                "wan2.2_high_noise_14B_fp8_scaled.safetensors",
+                Precision::Fp8,
+                0.0,
+            )],
+            0.0,
+        );
+        let p = run(&pc, &m, 1024.0, 1024.0, &s, &[], 0);
+        assert!(!p.sizes_known, "{p:?}");
+        assert_ne!(
+            p.fit,
+            Fit::Resident,
+            "a model of unknown size is planned as if it may not fit"
+        );
+        assert!(
+            p.explain.iter().any(|e| e.contains("isn't known yet")),
+            "{:?}",
+            p.explain
+        );
+        assert!(
+            !p.explain.iter().any(|e| e.contains("0.0 GB")),
+            "no made-up numbers: {:?}",
+            p.explain
+        );
+        // Without a GPU (CPU-only PCs) the size is still reported as unknown.
+        let cpu = HardwareInfo {
+            ram_total_gb: 32.0,
+            ..Default::default()
+        };
+        assert!(!run(&cpu, &m, 1024.0, 1024.0, &s, &[], 0).sizes_known);
+        // Once the size is known the normal estimate comes back.
+        let m = model(&[("wan.safetensors", Precision::Fp8, 14.3)], 6.7);
+        let p = run(&pc, &m, 1024.0, 1024.0, &s, &[], 0);
+        assert!(p.sizes_known);
+        assert_eq!(p.fit, Fit::Offload);
     }
 
     #[test]

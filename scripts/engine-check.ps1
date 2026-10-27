@@ -39,6 +39,16 @@ try {
         if (-not (Test-Path (Join-Path $root $p))) { throw "missing $p after install" }
     }
     if (Select-String -Path (Join-Path $root 'engines/full/constraints.txt') -Pattern '^xformers' -Quiet) { throw 'xformers must never be installed' }
+    $gguf = Join-Path $root 'engines/full/base/custom_nodes/ComfyUI-GGUF'
+    foreach ($p in 'nodes.py', '.localgallery.json') {
+        if (-not (Test-Path (Join-Path $gguf $p))) { throw "GGUF add-on: missing $p in $gguf" }
+    }
+    # Placeholder files: only their names matter here (the loaders list *.gguf). The core scans
+    # them too and must shrug them off.
+    foreach ($d in 'diffusion_models', 'text_encoders') {
+        New-Item -ItemType Directory -Force -Path (Join-Path $root "models/$d") | Out-Null
+        [IO.File]::WriteAllBytes((Join-Path $root "models/$d/lg-check-$d.gguf"), [byte[]](0x47, 0x47, 0x55, 0x46))
+    }
 
     $t0 = Get-Date
     Invoke-Core $core POST '/api/engine/start' -TimeoutSec 600 | Out-Null
@@ -46,6 +56,18 @@ try {
     Write-Host ("engine ready in {0:N0} s at {1}, flags: {2}" -f ((Get-Date) - $t0).TotalSeconds, $e.url, ($e.flags -join ' '))
     $stats = Invoke-RestMethod "$($e.url)/system_stats"
     Write-Host "ComfyUI $($stats.system.comfyui_version), Python $($stats.system.python_version.Split(' ')[0]), torch $($stats.system.pytorch_version)"
+
+    # GGUF support: the add-on's nodes loaded, and they see the app's models folder.
+    $info = Invoke-RestMethod "$($e.url)/object_info"
+    foreach ($n in 'UnetLoaderGGUF', 'CLIPLoaderGGUF', 'DualCLIPLoaderGGUF', 'TripleCLIPLoaderGGUF', 'QuadrupleCLIPLoaderGGUF') {
+        if (-not $info.$n) { throw "GGUF node $n is missing from the engine" }
+    }
+    $unets = @($info.UnetLoaderGGUF.input.required.unet_name[0])
+    $clips = @($info.CLIPLoaderGGUF.input.required.clip_name[0])
+    if ($unets -notcontains 'lg-check-diffusion_models.gguf') { throw "UnetLoaderGGUF does not list models/diffusion_models: $($unets -join ', ')" }
+    if ($clips -notcontains 'lg-check-text_encoders.gguf') { throw "CLIPLoaderGGUF does not list models/text_encoders: $($clips -join ', ')" }
+    Write-Host 'GGUF nodes present and they list the app models folder'
+    Remove-Item (Join-Path $root 'models/*/lg-check-*.gguf')
 
     if (-not $SkipTests) {
         $env:LG_REAL_COMFY_URL = $e.url

@@ -189,3 +189,42 @@ test("settings persist", async ({ page }) => {
   await page.locator('[data-nav="settings"]').click();
   await expect(page.getByText("2.0 GB")).toBeVisible();
 });
+
+test("hugging face: browse repos, see sizes and users, download into the right folder", async ({ page }) => {
+  await open(page);
+  await page.locator('[data-nav="models"]').click();
+  // Sizes are looked up online: Z-Image now has real sizes, Wan 2.2 (unknown to the mock) says so.
+  const zimage = page.locator('[data-model-card="z-image-turbo"]');
+  await expect(zimage).toContainText("11.5 GB", { timeout: 15_000 });
+  await expect(zimage).not.toContainText("0.0 GB");
+  await expect(page.locator('[data-model-card="wan22-14b"]')).toContainText("size unknown");
+
+  await page.getByRole("tab", { name: "Hugging Face" }).click();
+  const hub = page.getByTestId("hub");
+  await expect(hub.locator("[data-repo]")).toHaveCount(3);
+  await page.getByLabel("Search repos").fill("moss");
+  await expect(hub.locator("[data-repo]")).toHaveCount(1);
+  await expect(hub.locator('[data-repo="Comfy-Org/MOSS-Image"]')).toBeVisible();
+  await page.getByLabel("Search repos").fill("");
+  await hub.locator('[data-repo="Comfy-Org/z_image_turbo"]').click();
+
+  const dit = hub.locator('[data-hub-file="z_image_turbo_bf16.safetensors"]');
+  await expect(dit).toContainText("diffusion_models");
+  await expect(dit).toContainText("11.5 GB");
+  await expect(dit.getByRole("button", { name: "Z-Image Turbo" })).toBeVisible();
+  await expect(hub).toContainText("1 other file(s) hidden");
+  // A file outside split_files/<folder>: the user picks the folder before downloading.
+  const gguf = hub.locator('[data-hub-file="z_image_turbo-Q4_K_M.gguf"]');
+  await expect(gguf.getByRole("button", { name: "Download" })).toBeDisabled();
+  await gguf.getByLabel("Folder for z_image_turbo-Q4_K_M.gguf").selectOption("diffusion_models");
+  await expect(gguf.getByRole("button", { name: "Download" })).toBeEnabled();
+  await shot(page, "11-hugging-face");
+
+  const vae = hub.locator('[data-hub-file="ae.safetensors"]');
+  await vae.getByRole("button", { name: "Download" }).click();
+  await expect(vae).toContainText("on disk", { timeout: 20_000 });
+  // "Used by" opens the model.
+  await dit.getByRole("button", { name: "Z-Image Turbo" }).click();
+  await expect(page.locator('[data-nav="create"]')).toHaveAttribute("aria-current", "page");
+});
+

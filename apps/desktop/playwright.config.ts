@@ -13,6 +13,7 @@ const repo = resolve(here, "../..");
 const root = join(mkdtempSync(join(tmpdir(), "lg-e2e-")), "Local Gallery ü");
 const exe = process.env.LG_CORE_EXE ?? join(repo, "target/debug/localgallery-core" + (process.platform === "win32" ? ".exe" : ""));
 export const PORT = 7891;
+const HUB_PORT = 7892;
 
 export default defineConfig({
   testDir: "e2e",
@@ -26,11 +27,21 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  webServer: {
-    command: `"${exe}" --root "${root}" --engine fake --fake-object-info "${join(repo, "tests/fixtures/object_info.json")}" --fake-step-ms 30 --manifests "${join(repo, "manifests")}" --ui "${join(here, "dist")}" --port ${PORT} --token e2e`,
-    url: `http://127.0.0.1:${PORT}/api/health`,
-    reuseExistingServer: false,
-    timeout: 60_000,
-    env: { ...process.env, RUST_LOG: "warn" } as Record<string, string>,
-  },
+  webServer: [
+    // Stand-in for Hugging Face (model browser, size lookups, downloads).
+    {
+      command: `node "${join(here, "e2e/mock-hub.mjs")}"`,
+      url: `http://127.0.0.1:${HUB_PORT}/health`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+      env: { ...process.env, MOCK_HUB_PORT: String(HUB_PORT) } as Record<string, string>,
+    },
+    {
+      command: `"${exe}" --root "${root}" --engine fake --fake-object-info "${join(repo, "tests/fixtures/object_info.json")}" --fake-object-info "${join(repo, "tests/fixtures/object_info.gguf.json")}" --fake-step-ms 30 --manifests "${join(repo, "manifests")}" --ui "${join(here, "dist")}" --port ${PORT} --token e2e --hf-endpoint http://127.0.0.1:${HUB_PORT}`,
+      url: `http://127.0.0.1:${PORT}/api/health`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: { ...process.env, RUST_LOG: "warn" } as Record<string, string>,
+    },
+  ],
 });

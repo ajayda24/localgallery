@@ -25,6 +25,10 @@ async fn managed_install_into_portable_folder() {
         uv: Some(uv),
         comfy_source: Some(src),
         torch_index: std::env::var("LG_TORCH_INDEX").ok(),
+        // Offline machines can point at a ComfyUI-GGUF checkout instead of downloading it.
+        addon_sources: std::env::var_os("LG_GGUF_SRC")
+            .map(|p| [("ComfyUI-GGUF".to_string(), PathBuf::from(p))].into())
+            .unwrap_or_default(),
     };
     let steps = plan(&lock, &layout, &opts).unwrap();
     let report = |p: lg_engine::install::InstallProgress| {

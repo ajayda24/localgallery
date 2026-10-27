@@ -29,7 +29,7 @@ export interface InputSpec {
 
 export interface Preset { name: string; description?: string; values: Record<string, unknown> }
 
-export interface FitInfo { fit: Fit; badge: "green" | "yellow" | "red"; explain: string[]; warnings: string[]; precision?: string | null }
+export interface FitInfo { fit: Fit; badge: "green" | "yellow" | "red" | "gray"; sizes_known?: boolean; explain: string[]; warnings: string[]; precision?: string | null }
 export type Fit = "resident" | "offload" | "stream" | "too_big";
 
 export interface FileView {
@@ -74,7 +74,7 @@ export interface JobSpec {
   op: string;
   values: Record<string, unknown>;
   batch?: number;
-  memory?: { plan?: string | null; precision?: string | null; vae_tiled?: boolean | null };
+  memory?: { plan?: string | null; precision?: string | null; vae_tiled?: boolean | null; files?: Record<string, string> };
   overrides?: Record<string, unknown>;
 }
 
@@ -100,7 +100,7 @@ export interface Output {
 }
 
 export interface Plan {
-  fit: Fit; variants: [string, string][]; precision: string | null; launch_flags: string[]; vae_tiled: boolean;
+  fit: Fit; sizes_known?: boolean; variants: [string, string][]; precision: string | null; launch_flags: string[]; vae_tiled: boolean;
   value_overrides: Record<string, unknown>; vram_budget_gb: number; weights_gb: number; downloads: [string, number][];
   estimated_vram_gb: number; estimated_seconds: number | null; explain: string[]; warnings: string[];
 }
@@ -135,11 +135,19 @@ export interface Settings {
   ui_level: string;
 }
 
+export interface HubRepo { id: string; name: string; updated: string | null; downloads: number | null; likes: number | null; gated: boolean }
+export interface HubFile {
+  path: string; name: string; folder: string | null; size_bytes: number; url: string; present: boolean;
+  download: { id: string; state: string; received: number; total: number | null } | null;
+  used_by: { id: string; name: string; tool: boolean }[];
+}
 export interface Download { id: string; name: string; url: string; dest: string; received: number; total: number | null; state: string; error: string | null }
 
 export interface LibraryFile {
   folder: string; name: string; root: string; size_bytes: number;
   info: { kind: string; arch: string | null; precision: string | null; format: string; parameters: number } | null;
+  /** Models and workflows that list this file or can use it in place of theirs. */
+  used_by: { id: string; name: string; tool: boolean }[];
 }
 
 export interface Benchmark { model: string; op: string; precision: string | null; plan: string; width: number; height: number; frames: number; steps: number; seconds: number; peak_vram_gb: number | null; peak_ram_gb: number | null; shared_gpu_gb: number | null; created_at: number }

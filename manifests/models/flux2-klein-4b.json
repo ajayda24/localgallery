@@ -27,6 +27,9 @@
           "size_gb": 0,
           "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4b-fp8/resolve/main/flux-2-klein-base-4b-fp8.safetensors"
         }
+      ],
+      "arch": [
+        "flux2"
       ]
     },
     {
@@ -39,7 +42,12 @@
           "size_gb": 0,
           "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors"
         }
-      ]
+      ],
+      "arch": [
+        "qwen3",
+        "llm"
+      ],
+      "name_contains": "qwen"
     },
     {
       "role": "vae",
