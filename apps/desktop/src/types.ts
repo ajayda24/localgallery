@@ -135,6 +135,12 @@ export interface Settings {
   ui_level: string;
 }
 
+export interface HubRepo { id: string; name: string; updated: string | null; downloads: number | null; likes: number | null; gated: boolean }
+export interface HubFile {
+  path: string; name: string; folder: string | null; size_bytes: number; url: string; present: boolean;
+  download: { id: string; state: string; received: number; total: number | null } | null;
+  used_by: { id: string; name: string; tool: boolean }[];
+}
 export interface Download { id: string; name: string; url: string; dest: string; received: number; total: number | null; state: string; error: string | null }
 
 export interface LibraryFile {

@@ -1,16 +1,16 @@
 // Models and tools: what fits this PC, what is downloaded, what is downloading.
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, FolderSearch, Pause, Play, Trash2 } from "lucide-react";
+import { Download, ExternalLink, FolderSearch, Lock, Pause, Play, Search, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { Badge, Bar, Button, Empty, Tabs } from "../components/ui";
 import { formatBytes, opLabel, sortedOps } from "../lib/form";
 import { useStore } from "../store";
-import type { LibraryFile, ModelSummary } from "../types";
+import type { HubFile, HubRepo, LibraryFile, ModelSummary } from "../types";
 import { FitBadge } from "./Create";
 
 export function Models() {
-  const [tab, setTab] = useState<"models" | "official" | "files" | "downloads">("models");
+  const [tab, setTab] = useState<"models" | "official" | "hub" | "files" | "downloads">("models");
   const downloads = useStore((s) => s.downloads);
   const active = downloads.filter((d) => d.state === "running" || d.state === "queued").length;
   return (
@@ -19,6 +19,7 @@ export function Models() {
         <Tabs value={tab} onChange={setTab} items={[
           { value: "models", label: "Models" },
           { value: "official", label: "Official workflows" },
+          { value: "hub", label: "Hugging Face" },
           { value: "files", label: "Files on disk" },
           { value: "downloads", label: active ? `Downloads (${active})` : "Downloads" },
         ]} />
@@ -26,6 +27,7 @@ export function Models() {
       <div className="flex-1 overflow-y-auto p-4">
         {tab === "models" ? <ModelGrid filter={(m) => !m.id.startsWith("bp-")} /> : null}
         {tab === "official" ? <ModelGrid filter={(m) => m.id.startsWith("bp-")} search /> : null}
+        {tab === "hub" ? <Hub /> : null}
         {tab === "files" ? <Files /> : null}
         {tab === "downloads" ? <Downloads /> : null}
       </div>
@@ -69,7 +71,7 @@ function ModelGrid({ filter, search }: { filter: (m: ModelSummary) => boolean; s
                   <div key={`${f.role}${f.ops.join()}`} className="flex items-center gap-2 text-xs">
                     <span className={`h-1.5 w-1.5 rounded-full ${f.present.length ? "bg-emerald-400" : "bg-zinc-500"}`} />
                     <span className="truncate muted">{f.present[0] ?? f.variants[0]?.name}</span>
-                    <span className="ml-auto muted whitespace-nowrap">{f.variants[0]?.size_gb ? `${f.variants[0].size_gb.toFixed(1)} GB` : ""}</span>
+                    <span className="ml-auto muted whitespace-nowrap">{f.variants[0]?.size_gb ? formatBytes(f.variants[0].size_gb * 1024 ** 3) : ""}</span>
                   </div>
                 ))}
               </div>
@@ -141,6 +143,141 @@ function Downloads() {
           {d.error ? <p className="text-xs text-red-400">{d.error}</p> : null}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ComfyUI model folders a downloaded file can go into (mirrors the core's list).
+const FOLDERS = ["diffusion_models", "checkpoints", "text_encoders", "vae", "loras", "controlnet", "upscale_models", "clip_vision", "model_patches", "latent_upscale_models", "embeddings"];
+
+function readPref(key: string, fallback: string) {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+function writePref(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable; the default is fine.
+  }
+}
+
+/** Browse a Hugging Face author's model repos (Comfy-Org by default) and download files. */
+function Hub() {
+  const { toast, models, selectModel, go } = useStore();
+  const [author, setAuthor] = useState(() => readPref("lg.hub.author", "Comfy-Org"));
+  const [q, setQ] = useState("");
+  const [repos, setRepos] = useState<HubRepo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [repo, setRepo] = useState<string | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setError(null);
+      api.hubRepos(q.trim(), author.trim())
+        .then((r) => setRepos(r.repos))
+        .catch((e) => { setRepos([]); setError(e.message); });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, author]);
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(260px,340px)_1fr]" data-testid="hub">
+      <div className="space-y-2 min-w-0">
+        <div className="flex gap-2">
+          <label className="relative flex-1">
+            <Search size={14} className="absolute left-2.5 top-2.5 muted" />
+            <input aria-label="Search repos" placeholder="Search models…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-8" />
+          </label>
+          <input aria-label="Author" className="w-32" value={author} onChange={(e) => { setAuthor(e.target.value); writePref("lg.hub.author", e.target.value); }} title="Hugging Face user or organisation" />
+        </div>
+        {error ? <p className="text-xs text-red-400">{error}</p> : null}
+        {repos === null ? <p className="text-xs muted">Loading…</p> : null}
+        {repos?.length === 0 && !error ? <p className="text-xs muted">No repos found.</p> : null}
+        <div className="space-y-1 max-h-[70vh] overflow-y-auto pr-1">
+          {repos?.map((r) => (
+            <button key={r.id} data-repo={r.id} onClick={() => setRepo(r.id)}
+              className={`w-full text-left rounded-lg px-3 py-2 cursor-pointer transition-colors ${repo === r.id ? "bg-accent-500/15 text-[var(--accent-text)]" : "hover:bg-[var(--panel-2)]"}`}>
+              <div className="flex items-center gap-1.5 text-sm font-medium truncate">{r.gated ? <Lock size={12} aria-label="gated" /> : null}{r.name}</div>
+              <div className="text-xs muted">{[r.updated ? new Date(r.updated).toLocaleDateString() : null, r.downloads != null ? `${r.downloads.toLocaleString()} downloads` : null].filter(Boolean).join(" · ")}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="min-w-0">
+        {repo ? <HubRepoFiles repo={repo} toast={toast} models={models} open={async (id) => { await selectModel(id); go("create"); }} />
+          : <Empty title="Pick a repo">Files are shown with their real size and the models folder they go in. Downloads resume if interrupted.</Empty>}
+      </div>
+    </div>
+  );
+}
+
+function HubRepoFiles({ repo, toast, models, open }: { repo: string; toast: (kind: "info" | "error" | "success", text: string) => void; models: ModelSummary[]; open: (id: string) => void }) {
+  const downloads = useStore((s) => s.downloads);
+  const [data, setData] = useState<{ files: HubFile[]; other_files: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [folders, setFolders] = useState<Record<string, string>>({});
+  // Reload when the model list changes (a download finished, a file appeared on disk).
+  useEffect(() => {
+    let live = true;
+    setError(null);
+    api.hubFiles(repo).then((d) => live && setData(d)).catch((e) => { if (live) { setData(null); setError(e.message); } });
+    return () => { live = false; };
+  }, [repo, models]);
+
+  if (error) return <div className="panel p-4 text-sm text-red-400">{error}</div>;
+  if (!data) return <p className="text-xs muted">Loading files…</p>;
+  const total = data.files.reduce((a, f) => a + (f.present ? 0 : f.size_bytes), 0);
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <h3 className="font-semibold truncate">{repo}</h3>
+        <a className="muted hover:text-[var(--text)]" href={`https://huggingface.co/${repo}`} rel="noreferrer" aria-label="Open on Hugging Face"><ExternalLink size={14} /></a>
+        <span className="ml-auto text-xs muted">{data.files.length} model file(s){total ? `, ${formatBytes(total)} not downloaded` : ""}{data.other_files ? ` · ${data.other_files} other file(s) hidden` : ""}</span>
+      </div>
+      {data.files.length ? (
+        <div className="panel divide-y divide-[var(--line)]">
+          {data.files.map((f) => {
+            const folder = f.folder ?? folders[f.path] ?? "";
+            const dl = downloads.find((d) => d.url === f.url);
+            const active = dl && (dl.state === "running" || dl.state === "queued");
+            return (
+              <div key={f.path} className="p-3 space-y-1.5" data-hub-file={f.name}>
+                <div className="flex items-center gap-2 text-sm min-w-0">
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${f.present ? "bg-emerald-400" : "bg-zinc-500"}`} />
+                  <span className="font-medium truncate" title={f.path}>{f.name}</span>
+                  <span className="ml-auto shrink-0 text-xs muted tabular-nums">{f.size_bytes ? formatBytes(f.size_bytes) : ""}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  {f.folder ? <Badge>{f.folder}</Badge> : (
+                    <select aria-label={`Folder for ${f.name}`} className="w-44 py-0.5 text-xs" value={folder} onChange={(e) => setFolders({ ...folders, [f.path]: e.target.value })}>
+                      <option value="">Choose a folder…</option>
+                      {FOLDERS.map((x) => <option key={x} value={x}>{x}</option>)}
+                    </select>
+                  )}
+                  {f.used_by.slice(0, 4).map((u) => <button key={u.id} onClick={() => open(u.id)} className="cursor-pointer"><Badge color="accent">{u.tool ? "workflow: " : ""}{u.name}</Badge></button>)}
+                  {f.used_by.length > 4 ? <Badge>+{f.used_by.length - 4} more</Badge> : null}
+                  {!f.used_by.length ? <span className="muted" title="Downloading works, but a model, an official workflow or an imported workflow has to use the file before you can create with it.">not used by a model yet</span> : null}
+                  <span className="ml-auto" />
+                  {f.present ? <span className="text-emerald-400">on disk</span> : active ? (
+                    <span className="muted tabular-nums">{dl.total ? `${Math.round((dl.received / dl.total) * 100)}%` : "starting…"}</span>
+                  ) : (
+                    <Button size="sm" disabled={!folder} data-hub-download={f.name}
+                      onClick={() => api.download({ url: f.url, folder, name: f.name }).then(() => toast("info", `Downloading ${f.name}`)).catch((e) => toast("error", e.message))}>
+                      <Download size={14} /> {dl?.state === "failed" ? "Retry" : dl?.state === "paused" ? "Resume" : "Download"}
+                    </Button>
+                  )}
+                </div>
+                {active && dl.total ? <Bar value={dl.received / dl.total} /> : null}
+                {dl?.state === "failed" && dl.error ? <p className="text-xs text-red-400">{dl.error}</p> : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : <Empty title="No model files">This repo has no .safetensors or .gguf files.</Empty>}
     </div>
   );
 }

@@ -25,6 +25,7 @@ pub struct App {
     pub sizes: Arc<crate::sizes::RemoteSizes>,
     /// Hugging Face endpoint, or `None` when online lookups are off.
     pub hf_endpoint: Option<String>,
+    pub hub: crate::hub::Hub,
     pub events: broadcast::Sender<CoreEvent>,
     pub hw: RwLock<HardwareInfo>,
     pub settings: RwLock<Settings>,
@@ -116,6 +117,7 @@ impl App {
                 paths.data.join("cache").join("file-sizes.json"),
             ),
             hf_endpoint,
+            hub: crate::hub::Hub::new(),
             paths,
             store,
             registry,

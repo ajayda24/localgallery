@@ -148,6 +148,7 @@ pub fn plan(i: &Input) -> Plan {
         let mut variants = Vec::new();
         let mut downloads = Vec::new();
         let mut precision = None;
+        let mut main_unknown = false;
         for f in i.manifest.files.iter().filter(|f| f.needed_for(i.op)) {
             let v = f
                 .variants
@@ -166,6 +167,7 @@ pub fn plan(i: &Input) -> Plan {
             }
             if component(f) == Component::Main {
                 precision = Some(v.precision);
+                main_unknown |= size_of(v, i.on_disk).0 <= 0.0;
             }
             variants.push((f.role.clone(), v.name.clone()));
         }
@@ -182,7 +184,8 @@ pub fn plan(i: &Input) -> Plan {
             explain,
             warnings,
             downloads,
-        );
+        )
+        .with_sizes_known(!main_unknown);
     };
     let laptop_extra = if i.hw.laptop == Some(true) { 0.3 } else { 0.0 };
     let vram_budget = (gpu.vram_total_gb - s.vram_headroom_gb - laptop_extra).max(0.5);
@@ -712,6 +715,12 @@ mod tests {
             "no made-up numbers: {:?}",
             p.explain
         );
+        // Without a GPU (CPU-only PCs) the size is still reported as unknown.
+        let cpu = HardwareInfo {
+            ram_total_gb: 32.0,
+            ..Default::default()
+        };
+        assert!(!run(&cpu, &m, 1024.0, 1024.0, &s, &[], 0).sizes_known);
         // Once the size is known the normal estimate comes back.
         let m = model(&[("wan.safetensors", Precision::Fp8, 14.3)], 6.7);
         let p = run(&pc, &m, 1024.0, 1024.0, &s, &[], 0);

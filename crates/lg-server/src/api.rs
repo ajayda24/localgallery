@@ -73,6 +73,8 @@ pub fn router(app: S, opts: ServeOptions) -> Router {
         .route("/api/outputs/{id}/as-asset", post(output_as_asset))
         .route("/api/assets", post(upload_asset))
         .route("/api/library", get(library))
+        .route("/api/hub/repos", get(hub_repos))
+        .route("/api/hub/files", get(hub_files))
         .route("/api/library/rescan", post(rescan))
         .route("/api/downloads", get(downloads).post(start_downloads))
         .route("/api/downloads/{id}/pause", post(pause_download))
@@ -625,6 +627,120 @@ async fn library(State(app): State<S>) -> Json<Value> {
     Json(json!(app.library.files()))
 }
 
+#[derive(Deserialize)]
+struct HubReposQ {
+    #[serde(default = "comfy_org")]
+    author: String,
+    #[serde(default)]
+    q: String,
+}
+fn comfy_org() -> String {
+    "Comfy-Org".into()
+}
+
+fn hub_endpoint(app: &App) -> Result<String, ApiError> {
+    app.hf_endpoint.clone().ok_or_else(|| {
+        ApiError(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Online model browsing is turned off.".into(),
+        )
+    })
+}
+
+fn hub_err(e: crate::hub::HubError) -> ApiError {
+    let code = match e {
+        crate::hub::HubError::NotFound => StatusCode::NOT_FOUND,
+        crate::hub::HubError::Denied(_) => StatusCode::FORBIDDEN,
+        crate::hub::HubError::Other(_) => StatusCode::BAD_GATEWAY,
+    };
+    ApiError(code, e.to_string())
+}
+
+fn hf_token(app: &App) -> Option<String> {
+    Some(app.settings.read().hf_token.clone()).filter(|t| !t.is_empty())
+}
+
+/// Model repos of a Hugging Face author (Comfy-Org by default), newest first.
+async fn hub_repos(State(app): State<S>, Query(q): Query<HubReposQ>) -> R {
+    let endpoint = hub_endpoint(&app)?;
+    let author = q.author.trim();
+    if !author.is_empty() && !crate::hub::valid_repo(&format!("{author}/x")) {
+        return Err(bad("invalid author"));
+    }
+    let repos = app
+        .hub
+        .repos(&endpoint, author, q.q.trim(), hf_token(&app).as_deref())
+        .await
+        .map_err(hub_err)?;
+    Ok(Json(json!({ "repos": repos })))
+}
+
+#[derive(Deserialize)]
+struct HubFilesQ {
+    repo: String,
+}
+
+/// A repo's model files: real size, the folder each goes in, whether it is already on disk or
+/// downloading, and which models or workflows use it.
+async fn hub_files(State(app): State<S>, Query(q): Query<HubFilesQ>) -> R {
+    let endpoint = hub_endpoint(&app)?;
+    if !crate::hub::valid_repo(&q.repo) {
+        return Err(bad("invalid repo id"));
+    }
+    let (files, other) = app
+        .hub
+        .files(&endpoint, &q.repo, hf_token(&app).as_deref())
+        .await
+        .map_err(hub_err)?;
+    // file name -> models and tools that list it.
+    let mut used: std::collections::HashMap<String, Vec<Value>> = Default::default();
+    for e in app.registry.list() {
+        let m = &e.manifest;
+        let mut names: Vec<&str> = m
+            .files
+            .iter()
+            .flat_map(|f| f.variants.iter().map(|v| v.name.as_str()))
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        for n in names {
+            used.entry(n.to_string()).or_default().push(
+                json!({"id": m.id, "name": m.display_name, "tool": m.origin != Origin::Builtin}),
+            );
+        }
+    }
+    // Built-in models first, then workflows; alphabetical within each.
+    for list in used.values_mut() {
+        list.sort_by_key(|u| {
+            (
+                u["tool"].as_bool(),
+                u["name"].as_str().map(str::to_lowercase),
+            )
+        });
+    }
+    let downloads = app.downloads.list();
+    let out: Vec<Value> = files
+        .into_iter()
+        .map(|f| {
+            let canonical = crate::hub::resolve_url(&q.repo, &f.path);
+            app.sizes.insert(&canonical, f.size_bytes);
+            let download_url = crate::sizes::via(&endpoint, &canonical);
+            let present = f.folder.as_deref().is_some_and(|d| app.library.has(d, &f.name));
+            let dl = downloads.iter().find(|d| d.url == download_url || d.url == canonical);
+            json!({
+                "path": f.path, "name": f.name, "folder": f.folder,
+                "size_bytes": f.size_bytes, "url": download_url,
+                "present": present,
+                "download": dl.map(|d| json!({"id": d.id, "state": d.state, "received": d.received, "total": d.total})),
+                "used_by": used.get(&f.name).cloned().unwrap_or_default(),
+            })
+        })
+        .collect();
+    Ok(Json(
+        json!({ "repo": q.repo, "files": out, "other_files": other }),
+    ))
+}
+
 async fn rescan(State(app): State<S>) -> Json<Value> {
     let n = app.library.scan();
     let _ = app.events.send(CoreEvent::ManifestsChanged);
@@ -694,13 +810,18 @@ async fn start_downloads(State(app): State<S>, Json(b): Json<DlReq>) -> R {
         }
     } else if let (Some(url), Some(folder), Some(name)) = (b.url, b.folder, b.name) {
         if !lg_modelscan::FOLDERS.contains(&folder.as_str())
+            || name.is_empty()
+            || name.starts_with('.')
             || name.contains("..")
-            || name.contains('/')
-            || name.contains('\\')
+            || name.contains(['/', '\\', ':'])
         {
             return Err(bad("bad folder or file name"));
         }
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            return Err(bad("only http(s) downloads"));
+        }
         let lib = app.library.clone();
+        let events = app.events.clone();
         started.push(app.downloads.start(
             url,
             app.paths.models.join(&folder).join(&name),
@@ -709,6 +830,7 @@ async fn start_downloads(State(app): State<S>, Json(b): Json<DlReq>) -> R {
             move |ok| {
                 if ok {
                     lib.scan();
+                    let _ = events.send(CoreEvent::ManifestsChanged);
                 }
             },
         ));
